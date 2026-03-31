@@ -54,8 +54,9 @@ export default function Home() {
       const text = await file.text()
       const data = JSON.parse(text)
 
-      if (Array.isArray(data.spins)) {
-        for (const spin of data.spins) {
+      const spinsData = data.spins ?? data.records
+      if (Array.isArray(spinsData)) {
+        for (const spin of spinsData) {
           const { created_at: _c, ...rest } = spin
           await supabase.from('spins').upsert(rest, { onConflict: 'id' })
         }
