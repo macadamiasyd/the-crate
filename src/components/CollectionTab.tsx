@@ -56,7 +56,7 @@ export default function CollectionTab() {
   }
 
   async function loadCollection() {
-    const { data } = await supabase.from('collection').select('*').order('artist')
+    const { data } = await supabase.from('collection').select('*').order('artist').order('year', { nullsFirst: false })
     setRecords(data || [])
     setLoading(false)
   }
