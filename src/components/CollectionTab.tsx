@@ -45,6 +45,7 @@ export default function CollectionTab() {
   const [bulkText, setBulkText] = useState('')
   const [bulkImporting, setBulkImporting] = useState(false)
   const [submitting, setSubmitting] = useState(false)
+  const [lookingUp, setLookingUp] = useState(false)
   const [flash, setFlash] = useState<Flash | null>(null)
 
   useEffect(() => { loadCollection() }, [])
@@ -87,6 +88,24 @@ export default function CollectionTab() {
       notes: r.notes || '',
     })
     setShowModal(true)
+  }
+
+  async function lookupYear() {
+    if (!form.artist.trim() || !form.album.trim()) return
+    setLookingUp(true)
+    try {
+      const res = await fetch('/api/lookup-year', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ artist: form.artist.trim(), album: form.album.trim() }),
+      })
+      const data = await res.json()
+      if (data.year) setForm(f => ({ ...f, year: String(data.year) }))
+      else showFlash('Year not found', false)
+    } catch {
+      showFlash('Lookup failed', false)
+    }
+    setLookingUp(false)
   }
 
   async function handleSubmitModal(e: React.FormEvent) {
@@ -317,14 +336,26 @@ export default function CollectionTab() {
                 </div>
                 <div>
                   <label className="block text-cream-dim text-xs mb-1">Year</label>
-                  <input
-                    type="number"
-                    value={form.year}
-                    onChange={e => setForm(f => ({ ...f, year: e.target.value }))}
-                    placeholder="YYYY"
-                    min="1900"
-                    max="2099"
-                  />
+                  <div className="flex gap-1.5">
+                    <input
+                      type="number"
+                      value={form.year}
+                      onChange={e => setForm(f => ({ ...f, year: e.target.value }))}
+                      placeholder="YYYY"
+                      min="1900"
+                      max="2099"
+                      style={{ flex: 1 }}
+                    />
+                    <button
+                      type="button"
+                      onClick={lookupYear}
+                      disabled={lookingUp || !form.artist.trim() || !form.album.trim()}
+                      title="Auto-lookup year via Claude"
+                      className="px-2 bg-surface2 text-teal border border-border rounded text-xs hover:border-teal transition-colors disabled:opacity-30 shrink-0"
+                    >
+                      {lookingUp ? '…' : '?'}
+                    </button>
+                  </div>
                 </div>
               </div>
               <div>
