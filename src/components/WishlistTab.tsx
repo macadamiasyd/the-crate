@@ -2,62 +2,37 @@
 
 import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabase'
-import type { Collection } from '@/types'
+import type { Wishlist } from '@/types'
 
 type Form = { artist: string; album: string; genre: string; year: string; notes: string }
 const EMPTY: Form = { artist: '', album: '', genre: '', year: '', notes: '' }
 
-const MONTH_MAP: Record<string, number> = {
-  january: 0, february: 1, march: 2, april: 3, may: 4, june: 5,
-  july: 6, august: 7, september: 8, october: 9, november: 10, december: 11,
-  jan: 0, feb: 1, mar: 2, apr: 3, jun: 5, jul: 6,
-  aug: 7, sep: 8, oct: 9, nov: 10, dec: 11,
-}
-
-function parseBulkText(text: string): Array<{ artist: string; album: string }> {
-  const DATE_RE = /^([A-Za-z]+)\.?\s+(\d{1,2})(?:st|nd|rd|th)?[,.]?\s*(\d{4})?$/
-  const results: Array<{ artist: string; album: string }> = []
-
-  for (const raw of text.split('\n')) {
-    const line = raw.trim()
-    if (!line) continue
-    const m = line.match(DATE_RE)
-    if (m && MONTH_MAP[m[1].toLowerCase()] !== undefined) continue
-    if (line.includes('\t')) {
-      const parts = line.split('\t').map(s => s.trim()).filter(Boolean)
-      if (parts.length >= 2) results.push({ album: parts[0], artist: parts[1] })
-    }
-  }
-
-  return results
-}
-
 type Flash = { text: string; ok: boolean }
 
-export default function CollectionTab() {
-  const [records, setRecords] = useState<Collection[]>([])
+export default function WishlistTab() {
+  const [records, setRecords] = useState<Wishlist[]>([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
   const [showModal, setShowModal] = useState(false)
   const [editingId, setEditingId] = useState<string | null>(null)
   const [form, setForm] = useState<Form>(EMPTY)
-  const [showBulk, setShowBulk] = useState(false)
-  const [bulkText, setBulkText] = useState('')
-  const [bulkImporting, setBulkImporting] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [lookingUp, setLookingUp] = useState(false)
-  const [editingOriginal, setEditingOriginal] = useState<{ artist: string; album: string } | null>(null)
   const [flash, setFlash] = useState<Flash | null>(null)
 
-  useEffect(() => { loadCollection() }, [])
+  useEffect(() => { loadWishlist() }, [])
 
   function showFlash(text: string, ok = true) {
     setFlash({ text, ok })
     setTimeout(() => setFlash(null), 3000)
   }
 
-  async function loadCollection() {
-    const { data } = await supabase.from('collection').select('*').order('artist').order('year', { nullsFirst: false })
+  async function loadWishlist() {
+    const { data } = await supabase
+      .from('wishlist')
+      .select('*')
+      .order('artist')
+      .order('year', { nullsFirst: false })
     setRecords(data || [])
     setLoading(false)
   }
@@ -79,9 +54,8 @@ export default function CollectionTab() {
     setShowModal(true)
   }
 
-  function openEdit(r: Collection) {
+  function openEdit(r: Wishlist) {
     setEditingId(r.id)
-    setEditingOriginal({ artist: r.artist, album: r.album })
     setForm({
       artist: r.artist,
       album: r.album,
@@ -124,80 +98,48 @@ export default function CollectionTab() {
     }
 
     if (editingId) {
-      const { error } = await supabase.from('collection').update(payload).eq('id', editingId)
-      if (!error) {
-        // Sync updates to any existing spins for this record
-        if (editingOriginal) {
-          await supabase
-            .from('spins')
-            .update({ artist: payload.artist, album: payload.album, genre: payload.genre, year: payload.year })
-            .ilike('artist', editingOriginal.artist)
-            .ilike('album', editingOriginal.album)
-        }
-        setShowModal(false)
-        showFlash('Updated!')
-        loadCollection()
-      } else showFlash('Update failed', false)
+      const { error } = await supabase.from('wishlist').update(payload).eq('id', editingId)
+      if (!error) { setShowModal(false); showFlash('Updated!'); loadWishlist() }
+      else showFlash('Update failed', false)
     } else {
-      const { error } = await supabase.from('collection').insert(payload)
-      if (!error) { setShowModal(false); showFlash('Added to collection!'); loadCollection() }
+      const { error } = await supabase.from('wishlist').insert(payload)
+      if (!error) { setShowModal(false); showFlash('Added to wishlist!'); loadWishlist() }
       else showFlash('Failed to add', false)
     }
     setSubmitting(false)
   }
 
   async function handleDelete(id: string) {
-    if (!confirm('Remove this record from your collection?')) return
-    await supabase.from('collection').delete().eq('id', id)
+    if (!confirm('Remove this from your wishlist?')) return
+    await supabase.from('wishlist').delete().eq('id', id)
     setRecords(prev => prev.filter(r => r.id !== id))
     showFlash('Removed')
   }
 
-  async function handleSpinIt(record: Collection) {
-    const today = new Date().toISOString().split('T')[0]
-    const { error } = await supabase.from('spins').insert({
-      artist: record.artist,
-      album: record.album,
-      genre: record.genre,
-      year: record.year,
-      date_played: today,
-    })
-    if (!error) showFlash(`Logged: ${record.album}`)
-    else showFlash('Failed to log spin', false)
-  }
+  async function handleBought(record: Wishlist) {
+    // Check if already in collection
+    const { data: existing } = await supabase
+      .from('collection')
+      .select('id')
+      .ilike('artist', record.artist)
+      .ilike('album', record.album)
+      .maybeSingle()
 
-  async function handleBulkImport() {
-    const entries = parseBulkText(bulkText)
-    if (!entries.length) { showFlash('No entries found', false); return }
-    setBulkImporting(true)
-    let added = 0, skipped = 0
-
-    for (const entry of entries) {
-      const { data } = await supabase
-        .from('collection')
-        .select('id')
-        .ilike('artist', entry.artist)
-        .ilike('album', entry.album)
-        .maybeSingle()
-
-      if (!data) {
-        const { error } = await supabase.from('collection').insert({
-          artist: entry.artist,
-          album: entry.album,
-          genre: null,
-          year: null,
-        })
-        if (!error) added++
-      } else {
-        skipped++
-      }
+    if (!existing) {
+      const { error } = await supabase.from('collection').insert({
+        artist: record.artist,
+        album: record.album,
+        genre: record.genre,
+        year: record.year,
+        notes: record.notes,
+      })
+      if (error) { showFlash('Failed to add to collection', false); return }
     }
 
-    showFlash(`Added ${added} records${skipped ? ` (${skipped} already in collection)` : ''}`)
-    setBulkText('')
-    setShowBulk(false)
-    loadCollection()
-    setBulkImporting(false)
+    // Remove from wishlist
+    await supabase.from('wishlist').delete().eq('id', record.id)
+    setRecords(prev => prev.filter(r => r.id !== record.id))
+    showFlash(`Moved to collection: ${record.album}`)
   }
 
   return (
@@ -220,39 +162,9 @@ export default function CollectionTab() {
           onClick={openAdd}
           className="px-4 py-2 bg-accent text-cream rounded text-sm font-medium hover:opacity-90 transition-opacity whitespace-nowrap shrink-0"
         >
-          + Add Record
-        </button>
-        <button
-          onClick={() => setShowBulk(v => !v)}
-          className="px-4 py-2 bg-surface2 text-cream-dim border border-border rounded text-sm hover:text-cream transition-colors whitespace-nowrap shrink-0"
-        >
-          Bulk Import
+          + Add to Wishlist
         </button>
       </div>
-
-      {/* Bulk import */}
-      {showBulk && (
-        <div className="bg-surface rounded-lg p-5">
-          <h3 className="text-cream text-xs font-semibold uppercase tracking-widest mb-2">Bulk Import to Collection</h3>
-          <p className="text-cream-dim text-xs mb-3">
-            Paste &ldquo;Album[Tab]Artist&rdquo; lines. Duplicate entries are skipped.
-          </p>
-          <textarea
-            value={bulkText}
-            onChange={e => setBulkText(e.target.value)}
-            placeholder={'Kind of Blue\tMiles Davis\nRumours\tFleetwood Mac\nAbbey Road\tThe Beatles'}
-            rows={8}
-            className="font-mono text-xs"
-          />
-          <button
-            onClick={handleBulkImport}
-            disabled={bulkImporting || !bulkText.trim()}
-            className="mt-3 px-4 py-2 bg-accent text-cream rounded text-sm font-medium hover:opacity-90 disabled:opacity-50"
-          >
-            {bulkImporting ? 'Importing…' : 'Import'}
-          </button>
-        </div>
-      )}
 
       {/* Count */}
       <div className="text-cream-dim text-xs">
@@ -262,7 +174,7 @@ export default function CollectionTab() {
       {/* List */}
       {!loading && filtered.length === 0 ? (
         <p className="text-cream-dim text-sm">
-          {records.length === 0 ? 'No records yet. Add your first above.' : 'No results.'}
+          {records.length === 0 ? 'Wishlist is empty. Add records you want to buy.' : 'No results.'}
         </p>
       ) : (
         <div className="space-y-px">
@@ -279,18 +191,16 @@ export default function CollectionTab() {
                 </div>
                 <div className="flex gap-3 mt-0.5">
                   {record.genre && <span className="text-cream-dim text-xs italic">{record.genre}</span>}
-                  {record.notes && (
-                    <span className="text-cream-dim text-xs truncate max-w-xs">{record.notes}</span>
-                  )}
+                  {record.notes && <span className="text-cream-dim text-xs truncate max-w-xs">{record.notes}</span>}
                 </div>
               </div>
               <div className="flex items-center gap-1.5 ml-4 opacity-0 group-hover:opacity-100 transition-all shrink-0">
                 <button
-                  onClick={() => handleSpinIt(record)}
+                  onClick={() => handleBought(record)}
                   className="px-2 py-1 text-xs text-teal border border-teal/50 rounded hover:bg-teal hover:text-bg transition-colors"
-                  title="Log a spin today"
+                  title="Move to collection"
                 >
-                  ▶ Spin It
+                  ✓ Bought!
                 </button>
                 <button
                   onClick={() => openEdit(record)}
@@ -316,7 +226,7 @@ export default function CollectionTab() {
           <div className="absolute inset-0 bg-black/70" onClick={() => setShowModal(false)} />
           <div className="relative bg-surface border border-border rounded-lg p-6 w-full max-w-md">
             <h2 className="text-cream text-xs font-semibold uppercase tracking-widest mb-5">
-              {editingId ? 'Edit Record' : 'Add Record'}
+              {editingId ? 'Edit Wishlist Item' : 'Add to Wishlist'}
             </h2>
             <form onSubmit={handleSubmitModal} className="space-y-3">
               <div>

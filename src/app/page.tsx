@@ -4,14 +4,16 @@ import { useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import LogTab from '@/components/LogTab'
 import CollectionTab from '@/components/CollectionTab'
+import WishlistTab from '@/components/WishlistTab'
 import AskTab from '@/components/AskTab'
 import StatsTab from '@/components/StatsTab'
 
-type Tab = 'log' | 'collection' | 'ask' | 'stats'
+type Tab = 'log' | 'collection' | 'wishlist' | 'ask' | 'stats'
 
 const TABS: { id: Tab; label: string }[] = [
   { id: 'log', label: 'Log' },
   { id: 'collection', label: 'Collection' },
+  { id: 'wishlist', label: 'Wishlist' },
   { id: 'ask', label: 'Ask' },
   { id: 'stats', label: 'Stats' },
 ]
@@ -119,6 +121,7 @@ export default function Home() {
       <main className="max-w-4xl mx-auto px-6 py-8">
         {activeTab === 'log' && <LogTab />}
         {activeTab === 'collection' && <CollectionTab />}
+        {activeTab === 'wishlist' && <WishlistTab />}
         {activeTab === 'ask' && <AskTab />}
         {activeTab === 'stats' && <StatsTab />}
       </main>

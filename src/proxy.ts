@@ -3,7 +3,7 @@ import { NextRequest, NextResponse } from 'next/server'
 const COOKIE = 'crate-auth'
 const TOKEN = 'ok'
 
-export function middleware(req: NextRequest) {
+export function proxy(req: NextRequest) {
   const { pathname } = req.nextUrl
 
   if (pathname === '/login' || pathname.startsWith('/api/auth')) {
