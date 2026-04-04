@@ -75,15 +75,15 @@ export default function StatsTab() {
   return (
     <div className="space-y-8">
       {/* Summary */}
-      <div className="grid grid-cols-3 gap-4">
+      <div className="grid grid-cols-3 gap-2 sm:gap-4">
         {[
           { value: spins.length, label: 'Total Spins' },
           { value: collection.length, label: 'In Collection' },
           { value: Object.keys(artistMap).length, label: 'Artists' },
         ].map(({ value, label }) => (
-          <div key={label} className="bg-surface rounded-lg p-4">
-            <div className="text-cream text-3xl font-bold">{value}</div>
-            <div className="text-cream-dim text-xs uppercase tracking-wider mt-1">{label}</div>
+          <div key={label} className="bg-surface rounded-lg p-3 sm:p-4">
+            <div className="text-cream text-xl sm:text-3xl font-bold">{value}</div>
+            <div className="text-cream-dim text-[10px] sm:text-xs uppercase tracking-wider mt-1">{label}</div>
           </div>
         ))}
       </div>
@@ -91,8 +91,8 @@ export default function StatsTab() {
       {/* Monthly chart */}
       <div>
         <h2 className="text-cream text-xs font-semibold uppercase tracking-widest mb-4">Spins per Month</h2>
-        <div className="bg-surface rounded-lg p-5">
-          <div className="flex items-end gap-1" style={{ height: '80px' }}>
+        <div className="bg-surface rounded-lg p-3 sm:p-5">
+          <div className="flex items-end gap-px sm:gap-1" style={{ height: '80px' }}>
             {monthData.map(({ key, count }) => (
               <div key={key} className="flex-1 flex flex-col items-center justify-end gap-1 group h-full">
                 <div
@@ -103,12 +103,11 @@ export default function StatsTab() {
               </div>
             ))}
           </div>
-          {/* X-axis labels — show every other month to avoid crowding */}
-          <div className="flex gap-1 mt-2">
+          <div className="flex gap-px sm:gap-1 mt-2">
             {monthData.map(({ key }, i) => (
               <div key={key} className="flex-1 text-center">
                 {i % 2 === 0 && (
-                  <span className="text-cream-dim text-[9px]">{fmtMonth(key)}</span>
+                  <span className="text-cream-dim text-[8px] sm:text-[9px]">{fmtMonth(key)}</span>
                 )}
               </div>
             ))}
@@ -117,7 +116,7 @@ export default function StatsTab() {
       </div>
 
       {/* Top albums & artists */}
-      <div className="grid grid-cols-2 gap-8">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-8">
         <div>
           <h2 className="text-cream text-xs font-semibold uppercase tracking-widest mb-4">Most Played Albums</h2>
           {topAlbums.length === 0 ? (

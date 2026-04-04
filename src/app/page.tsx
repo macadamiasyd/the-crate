@@ -80,33 +80,33 @@ export default function Home() {
   return (
     <div className="min-h-screen bg-bg">
       {/* Header */}
-      <header className="border-b border-border px-6 py-4 flex items-center justify-between">
-        <div>
-          <h1 className="text-cream text-lg font-bold tracking-[0.25em] uppercase">The Crate</h1>
-          <p className="text-cream-dim text-xs tracking-wide">Vinyl Listening Log</p>
+      <header className="border-b border-border px-4 sm:px-6 py-3 sm:py-4 flex items-center justify-between gap-3">
+        <div className="min-w-0">
+          <h1 className="text-cream text-base sm:text-lg font-bold tracking-[0.25em] uppercase">The Crate</h1>
+          <p className="text-cream-dim text-xs tracking-wide hidden sm:block">Vinyl Listening Log</p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 shrink-0">
           <button
             onClick={handleExport}
             disabled={exportLoading}
-            className="px-3 py-1.5 text-xs text-cream-dim border border-border rounded hover:text-cream hover:border-cream-dim transition-colors disabled:opacity-40"
+            className="px-2.5 sm:px-3 py-1.5 text-xs text-cream-dim border border-border rounded hover:text-cream hover:border-cream-dim transition-colors disabled:opacity-40"
           >
-            {exportLoading ? 'Exporting…' : 'Export JSON'}
+            {exportLoading ? '…' : 'Export'}
           </button>
-          <label className="px-3 py-1.5 text-xs text-cream-dim border border-border rounded hover:text-cream hover:border-cream-dim transition-colors cursor-pointer">
-            {importLoading ? 'Importing…' : 'Import JSON'}
+          <label className="px-2.5 sm:px-3 py-1.5 text-xs text-cream-dim border border-border rounded hover:text-cream hover:border-cream-dim transition-colors cursor-pointer">
+            {importLoading ? '…' : 'Import'}
             <input type="file" accept=".json" onChange={handleImport} className="hidden" />
           </label>
         </div>
       </header>
 
       {/* Tab bar */}
-      <nav className="border-b border-border px-6 flex">
+      <nav className="border-b border-border px-2 sm:px-6 flex overflow-x-auto scrollbar-hide">
         {TABS.map(tab => (
           <button
             key={tab.id}
             onClick={() => setActiveTab(tab.id)}
-            className={`px-5 py-3 text-sm font-medium transition-colors border-b-2 -mb-px ${
+            className={`px-3 sm:px-5 py-3 text-xs sm:text-sm font-medium transition-colors border-b-2 -mb-px whitespace-nowrap ${
               activeTab === tab.id
                 ? 'text-cream border-accent'
                 : 'text-cream-dim border-transparent hover:text-cream'
@@ -118,7 +118,7 @@ export default function Home() {
       </nav>
 
       {/* Content */}
-      <main className="max-w-4xl mx-auto px-6 py-8">
+      <main className="max-w-4xl mx-auto px-3 sm:px-6 py-5 sm:py-8">
         {activeTab === 'log' && <LogTab />}
         {activeTab === 'collection' && <CollectionTab />}
         {activeTab === 'wishlist' && <WishlistTab />}

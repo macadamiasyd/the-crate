@@ -186,10 +186,10 @@ export default function LogTab() {
       )}
 
       {/* Log form */}
-      <div className="bg-surface rounded-lg p-5">
+      <div className="bg-surface rounded-lg p-4 sm:p-5">
         <h2 className="text-cream text-xs font-semibold uppercase tracking-widest mb-4">Log a Spin</h2>
         <form onSubmit={handleSubmit} className="space-y-3">
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
               <label className="block text-cream-dim text-xs mb-1">Artist</label>
               <input
@@ -210,7 +210,7 @@ export default function LogTab() {
             </div>
           </div>
 
-          <div className="grid grid-cols-3 gap-3">
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
             <div>
               <label className="block text-cream-dim text-xs mb-1">Genre</label>
               <input
@@ -242,7 +242,7 @@ export default function LogTab() {
                 </button>
               </div>
             </div>
-            <div>
+            <div className="col-span-2 sm:col-span-1">
               <label className="block text-cream-dim text-xs mb-1">Date Played</label>
               <input
                 type="date"
@@ -314,17 +314,23 @@ export default function LogTab() {
                   {grouped[date].map(spin => (
                     <div
                       key={spin.id}
-                      className="flex items-center justify-between px-3 py-2.5 rounded group hover:bg-surface2 transition-colors"
+                      className="flex items-start sm:items-center justify-between px-2 sm:px-3 py-2.5 rounded group hover:bg-surface2 transition-colors"
                     >
-                      <div className="flex items-baseline gap-2 flex-1 min-w-0">
-                        <span className="text-cream text-sm truncate">{spin.album}</span>
-                        <span className="text-cream-dim text-sm shrink-0">— {spin.artist}</span>
-                        {spin.year && <span className="text-cream-dim text-xs shrink-0">({spin.year})</span>}
-                        {spin.genre && <span className="text-cream-dim text-xs shrink-0 italic">{spin.genre}</span>}
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-baseline gap-1.5 sm:gap-2 flex-wrap">
+                          <span className="text-cream text-sm truncate max-w-[60vw] sm:max-w-none">{spin.album}</span>
+                          <span className="text-cream-dim text-sm">— {spin.artist}</span>
+                        </div>
+                        {(spin.year || spin.genre) && (
+                          <div className="flex gap-2 mt-0.5">
+                            {spin.year && <span className="text-cream-dim text-xs">({spin.year})</span>}
+                            {spin.genre && <span className="text-cream-dim text-xs italic">{spin.genre}</span>}
+                          </div>
+                        )}
                       </div>
                       <button
                         onClick={() => deleteSpin(spin.id)}
-                        className="opacity-0 group-hover:opacity-100 text-cream-dim hover:text-accent text-xs ml-4 transition-all shrink-0"
+                        className="opacity-0 group-hover:opacity-100 text-cream-dim hover:text-accent text-xs ml-2 sm:ml-4 transition-all shrink-0"
                         title="Delete spin"
                       >
                         ✕

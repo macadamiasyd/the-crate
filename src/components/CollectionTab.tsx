@@ -209,25 +209,27 @@ export default function CollectionTab() {
       )}
 
       {/* Controls */}
-      <div className="flex gap-3">
+      <div className="flex flex-col sm:flex-row gap-2 sm:gap-3">
         <input
           value={search}
           onChange={e => setSearch(e.target.value)}
           placeholder="Search artist, album, genre…"
           className="flex-1"
         />
-        <button
-          onClick={openAdd}
-          className="px-4 py-2 bg-accent text-cream rounded text-sm font-medium hover:opacity-90 transition-opacity whitespace-nowrap shrink-0"
-        >
-          + Add Record
-        </button>
-        <button
-          onClick={() => setShowBulk(v => !v)}
-          className="px-4 py-2 bg-surface2 text-cream-dim border border-border rounded text-sm hover:text-cream transition-colors whitespace-nowrap shrink-0"
-        >
-          Bulk Import
-        </button>
+        <div className="flex gap-2 sm:gap-3">
+          <button
+            onClick={openAdd}
+            className="flex-1 sm:flex-none px-4 py-2 bg-accent text-cream rounded text-sm font-medium hover:opacity-90 transition-opacity whitespace-nowrap shrink-0"
+          >
+            + Add Record
+          </button>
+          <button
+            onClick={() => setShowBulk(v => !v)}
+            className="flex-1 sm:flex-none px-4 py-2 bg-surface2 text-cream-dim border border-border rounded text-sm hover:text-cream transition-colors whitespace-nowrap shrink-0"
+          >
+            Bulk Import
+          </button>
+        </div>
       </div>
 
       {/* Bulk import */}
@@ -269,22 +271,22 @@ export default function CollectionTab() {
           {filtered.map(record => (
             <div
               key={record.id}
-              className="flex items-center justify-between px-3 py-3 rounded group hover:bg-surface transition-colors"
+              className="flex flex-col sm:flex-row sm:items-center justify-between px-2 sm:px-3 py-3 rounded group hover:bg-surface transition-colors"
             >
               <div className="flex-1 min-w-0">
-                <div className="flex items-baseline gap-2">
-                  <span className="text-cream text-sm font-medium truncate">{record.album}</span>
-                  <span className="text-cream-dim text-sm shrink-0">— {record.artist}</span>
-                  {record.year && <span className="text-cream-dim text-xs shrink-0">({record.year})</span>}
+                <div className="flex items-baseline gap-1.5 sm:gap-2 flex-wrap">
+                  <span className="text-cream text-sm font-medium truncate max-w-[60vw] sm:max-w-none">{record.album}</span>
+                  <span className="text-cream-dim text-sm">— {record.artist}</span>
+                  {record.year && <span className="text-cream-dim text-xs">({record.year})</span>}
                 </div>
                 <div className="flex gap-3 mt-0.5">
                   {record.genre && <span className="text-cream-dim text-xs italic">{record.genre}</span>}
                   {record.notes && (
-                    <span className="text-cream-dim text-xs truncate max-w-xs">{record.notes}</span>
+                    <span className="text-cream-dim text-xs truncate max-w-[70vw] sm:max-w-xs">{record.notes}</span>
                   )}
                 </div>
               </div>
-              <div className="flex items-center gap-1.5 ml-4 opacity-0 group-hover:opacity-100 transition-all shrink-0">
+              <div className="flex items-center gap-1.5 mt-2 sm:mt-0 sm:ml-4 sm:opacity-0 sm:group-hover:opacity-100 transition-all shrink-0">
                 <button
                   onClick={() => handleSpinIt(record)}
                   className="px-2 py-1 text-xs text-teal border border-teal/50 rounded hover:bg-teal hover:text-bg transition-colors"

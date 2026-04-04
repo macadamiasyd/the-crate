@@ -71,3 +71,19 @@ button {
 ::-webkit-scrollbar-thumb:hover {
   background: #3a3a3a;
 }
+
+/* Hide scrollbar for tab bar overflow */
+.scrollbar-hide {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
+}
+
+/* Improve touch targets on mobile */
+@media (max-width: 639px) {
+  input, textarea, select {
+    font-size: 16px; /* prevents iOS zoom on focus */
+  }
+}
