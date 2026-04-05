@@ -1,12 +1,13 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabase'
 import LogTab from '@/components/LogTab'
 import CollectionTab from '@/components/CollectionTab'
 import WishlistTab from '@/components/WishlistTab'
 import AskTab from '@/components/AskTab'
 import StatsTab from '@/components/StatsTab'
+import UserPicker from '@/components/UserPicker'
 
 type Tab = 'log' | 'collection' | 'wishlist' | 'ask' | 'stats'
 
@@ -18,28 +19,60 @@ const TABS: { id: Tab; label: string }[] = [
   { id: 'stats', label: 'Stats' },
 ]
 
+function getStoredUser(): string | null {
+  if (typeof window === 'undefined') return null
+  return localStorage.getItem('crate-user')
+}
+
+function setStoredUser(name: string) {
+  localStorage.setItem('crate-user', name)
+  document.cookie = `crate-user=${encodeURIComponent(name)}; path=/; max-age=${60 * 60 * 24 * 365}`
+}
+
 export default function Home() {
   const [activeTab, setActiveTab] = useState<Tab>('log')
+  const [username, setUsername] = useState<string | null>(null)
   const [exportLoading, setExportLoading] = useState(false)
   const [importLoading, setImportLoading] = useState(false)
+
+  useEffect(() => {
+    setUsername(getStoredUser())
+  }, [])
+
+  function handleSelectUser(name: string) {
+    setStoredUser(name)
+    setUsername(name)
+  }
+
+  function handleSwitchUser() {
+    localStorage.removeItem('crate-user')
+    setUsername(null)
+  }
+
+  if (username === null) {
+    return <UserPicker onSelect={handleSelectUser} />
+  }
 
   async function handleExport() {
     setExportLoading(true)
     try {
-      const [spinsRes, collectionRes] = await Promise.all([
-        supabase.from('spins').select('*').order('date_played', { ascending: false }),
-        supabase.from('collection').select('*').order('artist'),
+      const [spinsRes, collectionRes, wishlistRes] = await Promise.all([
+        supabase.from('spins').select('*').eq('username', username).order('date_played', { ascending: false }),
+        supabase.from('collection').select('*').eq('username', username).order('artist'),
+        supabase.from('wishlist').select('*').eq('username', username).order('artist'),
       ])
       const data = {
         exported_at: new Date().toISOString(),
+        username,
         spins: spinsRes.data || [],
         collection: collectionRes.data || [],
+        wishlist: wishlistRes.data || [],
       }
       const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' })
       const url = URL.createObjectURL(blob)
       const a = document.createElement('a')
       a.href = url
-      a.download = `the-crate-${new Date().toISOString().split('T')[0]}.json`
+      a.download = `the-crate-${username!.toLowerCase()}-${new Date().toISOString().split('T')[0]}.json`
       a.click()
       URL.revokeObjectURL(url)
     } catch (e) {
@@ -60,13 +93,19 @@ export default function Home() {
       if (Array.isArray(spinsData)) {
         for (const spin of spinsData) {
           const { created_at: _c, ...rest } = spin
-          await supabase.from('spins').upsert(rest, { onConflict: 'id' })
+          await supabase.from('spins').upsert({ ...rest, username }, { onConflict: 'id' })
         }
       }
       if (Array.isArray(data.collection)) {
         for (const record of data.collection) {
           const { created_at: _c, ...rest } = record
-          await supabase.from('collection').upsert(rest, { onConflict: 'id' })
+          await supabase.from('collection').upsert({ ...rest, username }, { onConflict: 'id' })
+        }
+      }
+      if (Array.isArray(data.wishlist)) {
+        for (const record of data.wishlist) {
+          const { created_at: _c, ...rest } = record
+          await supabase.from('wishlist').upsert({ ...rest, username }, { onConflict: 'id' })
         }
       }
       alert('Import complete! Refresh to see updated data.')
@@ -86,6 +125,13 @@ export default function Home() {
           <p className="text-cream-dim text-xs tracking-wide hidden sm:block">Vinyl Listening Log</p>
         </div>
         <div className="flex items-center gap-2 shrink-0">
+          <button
+            onClick={handleSwitchUser}
+            className="px-2.5 sm:px-3 py-1.5 text-xs text-teal border border-teal/40 rounded hover:bg-teal hover:text-bg transition-colors"
+            title="Switch user"
+          >
+            {username}
+          </button>
           <button
             onClick={handleExport}
             disabled={exportLoading}
@@ -119,11 +165,11 @@ export default function Home() {
 
       {/* Content */}
       <main className="max-w-4xl mx-auto px-3 sm:px-6 py-5 sm:py-8">
-        {activeTab === 'log' && <LogTab />}
-        {activeTab === 'collection' && <CollectionTab />}
-        {activeTab === 'wishlist' && <WishlistTab />}
-        {activeTab === 'ask' && <AskTab />}
-        {activeTab === 'stats' && <StatsTab />}
+        {activeTab === 'log' && <LogTab username={username} />}
+        {activeTab === 'collection' && <CollectionTab username={username} />}
+        {activeTab === 'wishlist' && <WishlistTab username={username} />}
+        {activeTab === 'ask' && <AskTab username={username} />}
+        {activeTab === 'stats' && <StatsTab username={username} />}
       </main>
     </div>
   )

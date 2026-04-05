@@ -4,12 +4,12 @@ import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabase'
 import type { Wishlist } from '@/types'
 
-type Form = { artist: string; album: string; genre: string; year: string; notes: string }
-const EMPTY: Form = { artist: '', album: '', genre: '', year: '', notes: '' }
+type Form = { artist: string; album: string; genre: string; year: string; format: string; notes: string }
+const EMPTY: Form = { artist: '', album: '', genre: '', year: '', format: '', notes: '' }
 
 type Flash = { text: string; ok: boolean }
 
-export default function WishlistTab() {
+export default function WishlistTab({ username }: { username: string }) {
   const [records, setRecords] = useState<Wishlist[]>([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
@@ -20,7 +20,7 @@ export default function WishlistTab() {
   const [lookingUp, setLookingUp] = useState(false)
   const [flash, setFlash] = useState<Flash | null>(null)
 
-  useEffect(() => { loadWishlist() }, [])
+  useEffect(() => { loadWishlist() }, [username])
 
   function showFlash(text: string, ok = true) {
     setFlash({ text, ok })
@@ -31,6 +31,7 @@ export default function WishlistTab() {
     const { data } = await supabase
       .from('wishlist')
       .select('*')
+      .eq('username', username)
       .order('artist')
       .order('year', { nullsFirst: false })
     setRecords(data || [])
@@ -44,6 +45,7 @@ export default function WishlistTab() {
       r.artist.toLowerCase().includes(q) ||
       r.album.toLowerCase().includes(q) ||
       (r.genre || '').toLowerCase().includes(q) ||
+      (r.format || '').toLowerCase().includes(q) ||
       (r.notes || '').toLowerCase().includes(q)
     )
   })
@@ -61,6 +63,7 @@ export default function WishlistTab() {
       album: r.album,
       genre: r.genre || '',
       year: r.year ? String(r.year) : '',
+      format: r.format || '',
       notes: r.notes || '',
     })
     setShowModal(true)
@@ -94,6 +97,7 @@ export default function WishlistTab() {
       album: form.album.trim(),
       genre: form.genre.trim() || null,
       year: form.year ? parseInt(form.year) : null,
+      format: form.format.trim() || null,
       notes: form.notes.trim() || null,
     }
 
@@ -102,7 +106,7 @@ export default function WishlistTab() {
       if (!error) { setShowModal(false); showFlash('Updated!'); loadWishlist() }
       else showFlash('Update failed', false)
     } else {
-      const { error } = await supabase.from('wishlist').insert(payload)
+      const { error } = await supabase.from('wishlist').insert({ ...payload, username })
       if (!error) { setShowModal(false); showFlash('Added to wishlist!'); loadWishlist() }
       else showFlash('Failed to add', false)
     }
@@ -117,26 +121,27 @@ export default function WishlistTab() {
   }
 
   async function handleBought(record: Wishlist) {
-    // Check if already in collection
     const { data: existing } = await supabase
       .from('collection')
       .select('id')
+      .eq('username', username)
       .ilike('artist', record.artist)
       .ilike('album', record.album)
       .maybeSingle()
 
     if (!existing) {
       const { error } = await supabase.from('collection').insert({
+        username,
         artist: record.artist,
         album: record.album,
         genre: record.genre,
         year: record.year,
+        format: record.format,
         notes: record.notes,
       })
       if (error) { showFlash('Failed to add to collection', false); return }
     }
 
-    // Remove from wishlist
     await supabase.from('wishlist').delete().eq('id', record.id)
     setRecords(prev => prev.filter(r => r.id !== record.id))
     showFlash(`Moved to collection: ${record.album}`)
@@ -190,6 +195,7 @@ export default function WishlistTab() {
                   {record.year && <span className="text-cream-dim text-xs">({record.year})</span>}
                 </div>
                 <div className="flex gap-3 mt-0.5">
+                  {record.format && <span className="text-cream-dim text-xs">{record.format}</span>}
                   {record.genre && <span className="text-cream-dim text-xs italic">{record.genre}</span>}
                   {record.notes && <span className="text-cream-dim text-xs truncate max-w-[70vw] sm:max-w-xs">{record.notes}</span>}
                 </div>
@@ -224,7 +230,7 @@ export default function WishlistTab() {
       {showModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
           <div className="absolute inset-0 bg-black/70" onClick={() => setShowModal(false)} />
-          <div className="relative bg-surface border border-border rounded-lg p-6 w-full max-w-md">
+          <div className="relative bg-surface border border-border rounded-lg p-5 sm:p-6 w-full max-w-md max-h-[90vh] overflow-y-auto">
             <h2 className="text-cream text-xs font-semibold uppercase tracking-widest mb-5">
               {editingId ? 'Edit Wishlist Item' : 'Add to Wishlist'}
             </h2>
@@ -280,6 +286,14 @@ export default function WishlistTab() {
                     </button>
                   </div>
                 </div>
+              </div>
+              <div>
+                <label className="block text-cream-dim text-xs mb-1">Format</label>
+                <input
+                  value={form.format}
+                  onChange={e => setForm(f => ({ ...f, format: e.target.value }))}
+                  placeholder="LP, 7&quot;, CD, Cassette…"
+                />
               </div>
               <div>
                 <label className="block text-cream-dim text-xs mb-1">Notes</label>

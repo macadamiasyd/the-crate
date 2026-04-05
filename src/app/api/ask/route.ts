@@ -10,15 +10,19 @@ const supabase = createClient(
 
 export async function POST(req: NextRequest) {
   try {
-    const { question } = await req.json()
+    const { question, username } = await req.json()
     if (!question?.trim()) {
       return NextResponse.json({ error: 'Question is required' }, { status: 400 })
     }
 
-    const [spinsRes, collectionRes] = await Promise.all([
-      supabase.from('spins').select('*').order('date_played', { ascending: false }),
-      supabase.from('collection').select('*').order('artist'),
-    ])
+    let spinsQuery = supabase.from('spins').select('*').order('date_played', { ascending: false })
+    let collectionQuery = supabase.from('collection').select('*').order('artist')
+    if (username) {
+      spinsQuery = spinsQuery.eq('username', username)
+      collectionQuery = collectionQuery.eq('username', username)
+    }
+
+    const [spinsRes, collectionRes] = await Promise.all([spinsQuery, collectionQuery])
 
     const spins = spinsRes.data || []
     const collection = collectionRes.data || []
@@ -26,7 +30,7 @@ export async function POST(req: NextRequest) {
     const collectionText = collection
       .map(
         r =>
-          `- ${r.artist} — ${r.album}${r.year ? ` (${r.year})` : ''}${r.genre ? ` [${r.genre}]` : ''}${r.notes ? ` | ${r.notes}` : ''}`
+          `- ${r.artist} — ${r.album}${r.year ? ` (${r.year})` : ''}${r.format ? ` {${r.format}}` : ''}${r.genre ? ` [${r.genre}]` : ''}${r.notes ? ` | ${r.notes}` : ''}`
       )
       .join('\n')
 

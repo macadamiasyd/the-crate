@@ -52,9 +52,9 @@ function formatDate(dateStr: string) {
 
 type Flash = { text: string; ok: boolean }
 
-export default function LogTab() {
+export default function LogTab({ username }: { username: string }) {
   const today = new Date().toISOString().split('T')[0]
-  const [form, setForm] = useState({ artist: '', album: '', genre: '', year: '', date_played: today })
+  const [form, setForm] = useState({ artist: '', album: '', genre: '', year: '', format: '', date_played: today })
   const [spins, setSpins] = useState<Spin[]>([])
   const [loading, setLoading] = useState(true)
   const [submitting, setSubmitting] = useState(false)
@@ -64,7 +64,7 @@ export default function LogTab() {
   const [bulkImporting, setBulkImporting] = useState(false)
   const [flash, setFlash] = useState<Flash | null>(null)
 
-  useEffect(() => { loadSpins() }, [])
+  useEffect(() => { loadSpins() }, [username])
 
   function showFlash(text: string, ok = true) {
     setFlash({ text, ok })
@@ -75,6 +75,7 @@ export default function LogTab() {
     const { data } = await supabase
       .from('spins')
       .select('*')
+      .eq('username', username)
       .order('date_played', { ascending: false })
       .order('created_at', { ascending: false })
       .limit(200)
@@ -82,15 +83,16 @@ export default function LogTab() {
     setLoading(false)
   }
 
-  async function ensureInCollection(artist: string, album: string, genre: string | null, year: number | null) {
+  async function ensureInCollection(artist: string, album: string, genre: string | null, year: number | null, format: string | null) {
     const { data } = await supabase
       .from('collection')
       .select('id')
+      .eq('username', username)
       .ilike('artist', artist)
       .ilike('album', album)
       .maybeSingle()
     if (!data) {
-      await supabase.from('collection').insert({ artist, album, genre, year })
+      await supabase.from('collection').insert({ username, artist, album, genre, year, format })
     }
   }
 
@@ -118,17 +120,19 @@ export default function LogTab() {
     setSubmitting(true)
 
     const spin = {
+      username,
       artist: form.artist.trim(),
       album: form.album.trim(),
       genre: form.genre.trim() || null,
       year: form.year ? parseInt(form.year) : null,
+      format: form.format.trim() || null,
       date_played: form.date_played,
     }
 
     const { error } = await supabase.from('spins').insert(spin)
     if (!error) {
-      await ensureInCollection(spin.artist, spin.album, spin.genre, spin.year)
-      setForm({ artist: '', album: '', genre: '', year: '', date_played: today })
+      await ensureInCollection(spin.artist, spin.album, spin.genre, spin.year, spin.format)
+      setForm({ artist: '', album: '', genre: '', year: '', format: '', date_played: today })
       showFlash('Spin logged!')
       loadSpins()
     } else {
@@ -145,14 +149,16 @@ export default function LogTab() {
 
     for (const entry of entries) {
       const { error } = await supabase.from('spins').insert({
+        username,
         artist: entry.artist,
         album: entry.album,
         date_played: entry.date,
         genre: null,
         year: null,
+        format: null,
       })
       if (!error) {
-        await ensureInCollection(entry.artist, entry.album, null, null)
+        await ensureInCollection(entry.artist, entry.album, null, null, null)
         count++
       }
     }
@@ -210,7 +216,7 @@ export default function LogTab() {
             </div>
           </div>
 
-          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
             <div>
               <label className="block text-cream-dim text-xs mb-1">Genre</label>
               <input
@@ -241,6 +247,14 @@ export default function LogTab() {
                   {lookingUp ? '…' : '?'}
                 </button>
               </div>
+            </div>
+            <div>
+              <label className="block text-cream-dim text-xs mb-1">Format</label>
+              <input
+                value={form.format}
+                onChange={e => setForm(f => ({ ...f, format: e.target.value }))}
+                placeholder="LP, 7&quot;, CD…"
+              />
             </div>
             <div className="col-span-2 sm:col-span-1">
               <label className="block text-cream-dim text-xs mb-1">Date Played</label>
@@ -274,7 +288,7 @@ export default function LogTab() {
 
       {/* Bulk import */}
       {showBulk && (
-        <div className="bg-surface rounded-lg p-5">
+        <div className="bg-surface rounded-lg p-4 sm:p-5">
           <h3 className="text-cream text-xs font-semibold uppercase tracking-widest mb-2">Bulk Import</h3>
           <p className="text-cream-dim text-xs mb-3">
             Paste Apple Notes format: date headers like &ldquo;Mar 28th&rdquo;, then &ldquo;Album[Tab]Artist&rdquo; lines.
@@ -321,9 +335,10 @@ export default function LogTab() {
                           <span className="text-cream text-sm truncate max-w-[60vw] sm:max-w-none">{spin.album}</span>
                           <span className="text-cream-dim text-sm">— {spin.artist}</span>
                         </div>
-                        {(spin.year || spin.genre) && (
+                        {(spin.year || spin.genre || spin.format) && (
                           <div className="flex gap-2 mt-0.5">
                             {spin.year && <span className="text-cream-dim text-xs">({spin.year})</span>}
+                            {spin.format && <span className="text-cream-dim text-xs">{spin.format}</span>}
                             {spin.genre && <span className="text-cream-dim text-xs italic">{spin.genre}</span>}
                           </div>
                         )}

@@ -4,21 +4,21 @@ import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabase'
 import type { Spin, Collection } from '@/types'
 
-export default function StatsTab() {
+export default function StatsTab({ username }: { username: string }) {
   const [spins, setSpins] = useState<Spin[]>([])
   const [collection, setCollection] = useState<Collection[]>([])
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
     Promise.all([
-      supabase.from('spins').select('*').order('date_played', { ascending: false }),
-      supabase.from('collection').select('*'),
+      supabase.from('spins').select('*').eq('username', username).order('date_played', { ascending: false }),
+      supabase.from('collection').select('*').eq('username', username),
     ]).then(([s, c]) => {
       setSpins(s.data || [])
       setCollection(c.data || [])
       setLoading(false)
     })
-  }, [])
+  }, [username])
 
   if (loading) return <p className="text-cream-dim text-sm">Loading…</p>
 
@@ -46,6 +46,15 @@ export default function StatsTab() {
     if (r.genre) genreMap[r.genre] = (genreMap[r.genre] || 0) + 1
   }
   const topGenres = Object.entries(genreMap)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 10)
+
+  // Formats (from collection)
+  const formatMap: Record<string, number> = {}
+  for (const r of collection) {
+    if (r.format) formatMap[r.format] = (formatMap[r.format] || 0) + 1
+  }
+  const topFormats = Object.entries(formatMap)
     .sort((a, b) => b[1] - a[1])
     .slice(0, 10)
 
@@ -186,6 +195,24 @@ export default function StatsTab() {
                 className="flex items-center gap-2 px-3 py-1.5 bg-surface rounded-full border border-border"
               >
                 <span className="text-cream text-xs">{genre}</span>
+                <span className="text-cream-dim text-xs">{count}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Format breakdown */}
+      {topFormats.length > 0 && (
+        <div>
+          <h2 className="text-cream text-xs font-semibold uppercase tracking-widest mb-4">Collection by Format</h2>
+          <div className="flex flex-wrap gap-2">
+            {topFormats.map(([format, count]) => (
+              <div
+                key={format}
+                className="flex items-center gap-2 px-3 py-1.5 bg-surface rounded-full border border-border"
+              >
+                <span className="text-cream text-xs">{format}</span>
                 <span className="text-cream-dim text-xs">{count}</span>
               </div>
             ))}

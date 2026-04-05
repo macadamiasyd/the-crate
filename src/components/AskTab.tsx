@@ -11,7 +11,7 @@ const EXAMPLES = [
   'Which artists am I missing from my collection?',
 ]
 
-export default function AskTab() {
+export default function AskTab({ username }: { username: string }) {
   const [question, setQuestion] = useState('')
   const [answer, setAnswer] = useState('')
   const [loading, setLoading] = useState(false)
@@ -28,7 +28,7 @@ export default function AskTab() {
       const res = await fetch('/api/ask', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ question: question.trim() }),
+        body: JSON.stringify({ question: question.trim(), username }),
       })
       const data = await res.json()
       if (data.error) setError(data.error)
