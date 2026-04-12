@@ -69,18 +69,20 @@ export default function WishlistTab({ username }: { username: string }) {
     setShowModal(true)
   }
 
-  async function lookupYear() {
+  async function lookupMeta() {
     if (!form.artist.trim() || !form.album.trim()) return
     setLookingUp(true)
     try {
-      const res = await fetch('/api/lookup-year', {
+      const res = await fetch('/api/lookup-meta', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ artist: form.artist.trim(), album: form.album.trim() }),
       })
       const data = await res.json()
-      if (data.year) setForm(f => ({ ...f, year: String(data.year) }))
-      else showFlash('Year not found', false)
+      let found = false
+      if (data.year) { setForm(f => ({ ...f, year: String(data.year) })); found = true }
+      if (data.genre && !form.genre.trim()) { setForm(f => ({ ...f, genre: data.genre })); found = true }
+      if (!found) showFlash('No data found', false)
     } catch {
       showFlash('Lookup failed', false)
     }
@@ -277,7 +279,7 @@ export default function WishlistTab({ username }: { username: string }) {
                     />
                     <button
                       type="button"
-                      onClick={lookupYear}
+                      onClick={lookupMeta}
                       disabled={lookingUp || !form.artist.trim() || !form.album.trim()}
                       title="Auto-lookup year via Claude"
                       className="px-2 bg-surface2 text-teal border border-border rounded text-xs hover:border-teal transition-colors disabled:opacity-30 shrink-0"

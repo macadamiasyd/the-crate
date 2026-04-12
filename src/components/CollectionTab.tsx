@@ -102,6 +102,8 @@ export default function CollectionTab({ username }: { username: string }) {
   const [lookingUp, setLookingUp] = useState(false)
   const [editingOriginal, setEditingOriginal] = useState<{ artist: string; album: string } | null>(null)
   const [flash, setFlash] = useState<Flash | null>(null)
+  const [autoFilling, setAutoFilling] = useState(false)
+  const [autoFillProgress, setAutoFillProgress] = useState('')
 
   useEffect(() => { loadCollection() }, [username])
 
@@ -153,22 +155,74 @@ export default function CollectionTab({ username }: { username: string }) {
     setShowModal(true)
   }
 
-  async function lookupYear() {
+  async function lookupMeta() {
     if (!form.artist.trim() || !form.album.trim()) return
     setLookingUp(true)
     try {
-      const res = await fetch('/api/lookup-year', {
+      const res = await fetch('/api/lookup-meta', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ artist: form.artist.trim(), album: form.album.trim() }),
       })
       const data = await res.json()
-      if (data.year) setForm(f => ({ ...f, year: String(data.year) }))
-      else showFlash('Year not found', false)
+      let found = false
+      if (data.year) { setForm(f => ({ ...f, year: String(data.year) })); found = true }
+      if (data.genre && !form.genre.trim()) { setForm(f => ({ ...f, genre: data.genre })); found = true }
+      if (!found) showFlash('No data found', false)
     } catch {
       showFlash('Lookup failed', false)
     }
     setLookingUp(false)
+  }
+
+  async function autoLookupGenre(artist: string, album: string) {
+    try {
+      const res = await fetch('/api/lookup-meta', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ artist, album }),
+      })
+      const data = await res.json()
+      if (data.genre) {
+        await supabase.from('collection').update({ genre: data.genre }).eq('username', username).ilike('artist', artist).ilike('album', album).is('genre', null)
+        await supabase.from('spins').update({ genre: data.genre }).eq('username', username).ilike('artist', artist).ilike('album', album).is('genre', null)
+      }
+    } catch { /* silent */ }
+  }
+
+  async function handleAutoFillGenres() {
+    const missing = records.filter(r => !r.genre)
+    if (missing.length === 0) { showFlash('All records have genres'); return }
+    if (!confirm(`Look up genres for ${missing.length} records? This may take a while.`)) return
+    setAutoFilling(true)
+    let updated = 0
+
+    for (let i = 0; i < missing.length; i++) {
+      const r = missing[i]
+      setAutoFillProgress(`${i + 1} of ${missing.length}…`)
+      try {
+        const res = await fetch('/api/lookup-meta', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ artist: r.artist, album: r.album }),
+        })
+        const data = await res.json()
+        const updates: Record<string, unknown> = {}
+        if (data.genre) updates.genre = data.genre
+        if (data.year && !r.year) updates.year = data.year
+        if (Object.keys(updates).length > 0) {
+          await supabase.from('collection').update(updates).eq('id', r.id)
+          updated++
+        }
+      } catch { /* continue */ }
+      // MusicBrainz rate limit: 1 req/sec
+      if (i < missing.length - 1) await new Promise(res => setTimeout(res, 1100))
+    }
+
+    setAutoFilling(false)
+    setAutoFillProgress('')
+    showFlash(`Updated ${updated} of ${missing.length} records`)
+    loadCollection()
   }
 
   async function handleSubmitModal(e: React.FormEvent) {
@@ -202,8 +256,12 @@ export default function CollectionTab({ username }: { username: string }) {
       } else showFlash('Update failed', false)
     } else {
       const { error } = await supabase.from('collection').insert({ ...payload, username })
-      if (!error) { setShowModal(false); showFlash('Added to collection!'); loadCollection() }
-      else showFlash('Failed to add', false)
+      if (!error) {
+        setShowModal(false)
+        showFlash('Added to collection!')
+        loadCollection()
+        if (!payload.genre) autoLookupGenre(payload.artist, payload.album)
+      } else showFlash('Failed to add', false)
     }
     setSubmitting(false)
   }
@@ -348,6 +406,13 @@ export default function CollectionTab({ username }: { username: string }) {
             {csvImporting ? '…' : 'CSV'}
             <input type="file" accept=".csv,.tsv,.txt,.xlsx" onChange={handleCsvImport} className="hidden" />
           </label>
+          <button
+            onClick={handleAutoFillGenres}
+            disabled={autoFilling}
+            className="flex-1 sm:flex-none px-3 py-2 bg-surface2 text-teal border border-teal/40 rounded text-sm hover:bg-teal hover:text-bg transition-colors whitespace-nowrap shrink-0 disabled:opacity-50"
+          >
+            {autoFilling ? autoFillProgress : 'Auto-fill Genres'}
+          </button>
         </div>
       </div>
 
@@ -483,7 +548,7 @@ export default function CollectionTab({ username }: { username: string }) {
                     />
                     <button
                       type="button"
-                      onClick={lookupYear}
+                      onClick={lookupMeta}
                       disabled={lookingUp || !form.artist.trim() || !form.album.trim()}
                       title="Auto-lookup year via Claude"
                       className="px-2 bg-surface2 text-teal border border-border rounded text-xs hover:border-teal transition-colors disabled:opacity-30 shrink-0"

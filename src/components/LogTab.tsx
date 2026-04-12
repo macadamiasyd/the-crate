@@ -96,22 +96,43 @@ export default function LogTab({ username }: { username: string }) {
     }
   }
 
-  async function lookupYear() {
+  async function lookupMeta() {
     if (!form.artist.trim() || !form.album.trim()) return
     setLookingUp(true)
     try {
-      const res = await fetch('/api/lookup-year', {
+      const res = await fetch('/api/lookup-meta', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ artist: form.artist.trim(), album: form.album.trim() }),
       })
       const data = await res.json()
-      if (data.year) setForm(f => ({ ...f, year: String(data.year) }))
-      else showFlash('Year not found', false)
+      let found = false
+      if (data.year) { setForm(f => ({ ...f, year: String(data.year) })); found = true }
+      if (data.genre && !form.genre.trim()) { setForm(f => ({ ...f, genre: data.genre })); found = true }
+      if (!found) showFlash('No data found', false)
     } catch {
       showFlash('Lookup failed', false)
     }
     setLookingUp(false)
+  }
+
+  async function autoLookupGenre(artist: string, album: string) {
+    try {
+      const res = await fetch('/api/lookup-meta', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ artist, album }),
+      })
+      const data = await res.json()
+      const updates: Record<string, unknown> = {}
+      if (data.genre) updates.genre = data.genre
+      if (data.year) updates.year = data.year
+      if (Object.keys(updates).length === 0) return
+
+      await supabase.from('spins').update(updates).eq('username', username).ilike('artist', artist).ilike('album', album).is('genre', null)
+      await supabase.from('collection').update(updates).eq('username', username).ilike('artist', artist).ilike('album', album).is('genre', null)
+      loadSpins()
+    } catch { /* silent */ }
   }
 
   async function handleSubmit(e: React.FormEvent) {
@@ -132,9 +153,11 @@ export default function LogTab({ username }: { username: string }) {
     const { error } = await supabase.from('spins').insert(spin)
     if (!error) {
       await ensureInCollection(spin.artist, spin.album, spin.genre, spin.year, spin.format)
+      const needsLookup = !spin.genre
       setForm({ artist: '', album: '', genre: '', year: '', format: '', date_played: today })
       showFlash('Spin logged!')
       loadSpins()
+      if (needsLookup) autoLookupGenre(spin.artist, spin.album)
     } else {
       showFlash('Failed to log spin', false)
     }
@@ -239,7 +262,7 @@ export default function LogTab({ username }: { username: string }) {
                 />
                 <button
                   type="button"
-                  onClick={lookupYear}
+                  onClick={lookupMeta}
                   disabled={lookingUp || !form.artist.trim() || !form.album.trim()}
                   title="Auto-lookup year via Claude"
                   className="px-2 bg-surface2 text-teal border border-border rounded text-xs hover:border-teal transition-colors disabled:opacity-30 shrink-0"
