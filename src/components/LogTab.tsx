@@ -78,7 +78,7 @@ export default function LogTab({ username }: { username: string }) {
       .eq('username', username)
       .order('date_played', { ascending: false })
       .order('created_at', { ascending: false })
-      .limit(200)
+      .limit(2000)
     setSpins(data || [])
     setLoading(false)
   }
