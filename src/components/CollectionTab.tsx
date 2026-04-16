@@ -460,16 +460,19 @@ export default function CollectionTab({ username }: { username: string }) {
   async function acceptRefreshedCover() {
     if (!refreshPreview) return
     const { item, coverUrl, mbid, cover_source } = refreshPreview
-    const updates = { cover_url: coverUrl, mbid, cover_source }
-    await supabase.from('collection').update(updates).eq('id', item.id)
-    await supabase.from('spins').update(updates).eq('username', username).ilike('artist', item.artist).ilike('album', item.album)
+    const dbUpdates = { cover_url: coverUrl, mbid, cover_source }
+    const typedSource = cover_source as Collection['cover_source']
+    const { error } = await supabase.from('collection').update(dbUpdates).eq('id', item.id)
+    if (error) { console.error('Cover refresh update failed:', error); showFlash('Update failed: ' + error.message, false); setRefreshPreview(null); return }
+    await supabase.from('spins').update(dbUpdates).eq('username', username).ilike('artist', item.artist).ilike('album', item.album)
     setRefreshPreview(null)
     // Update detail modal if open for this item
     if (detailRecord?.id === item.id) {
-      setDetailRecord({ ...detailRecord, cover_url: coverUrl, mbid, cover_source: cover_source as Collection['cover_source'] })
+      setDetailRecord({ ...detailRecord, cover_url: coverUrl, mbid, cover_source: typedSource })
     }
+    // Update local records immediately
+    setRecords(prev => prev.map(r => r.id === item.id ? { ...r, cover_url: coverUrl, mbid, cover_source: typedSource } : r))
     showFlash('Cover updated!')
-    loadCollection()
   }
 
   function skipRefreshedCover() {
@@ -486,15 +489,17 @@ export default function CollectionTab({ username }: { username: string }) {
       cover_source: 'user_picked' as const,
       mbid: cover.mbid || null,
     }
-    await supabase.from('collection').update(updates).eq('id', coverSearchItem.id)
+    const { error } = await supabase.from('collection').update(updates).eq('id', coverSearchItem.id)
+    if (error) { console.error('Collection cover update failed:', error); showFlash('Update failed: ' + error.message, false); return }
     await supabase.from('spins').update(updates).eq('username', username).ilike('artist', coverSearchItem.artist).ilike('album', coverSearchItem.album)
     // Update detail modal if open for this item
     if (detailRecord?.id === coverSearchItem.id) {
       setDetailRecord({ ...detailRecord, ...updates })
     }
+    // Update local records immediately for instant UI feedback
+    setRecords(prev => prev.map(r => r.id === coverSearchItem.id ? { ...r, ...updates } : r))
     setCoverSearchItem(null)
     showFlash('Cover updated!')
-    loadCollection()
   }
 
   async function handleRemoveCover(item: Collection) {
@@ -504,15 +509,17 @@ export default function CollectionTab({ username }: { username: string }) {
       const filename = item.cover_url.split('/covers/').pop()
       if (filename) await supabase.storage.from('covers').remove([filename])
     }
-    const updates = { cover_url: null, cover_source: null, mbid: null }
-    await supabase.from('collection').update(updates).eq('id', item.id)
+    const updates = { cover_url: null as string | null, cover_source: null as string | null, mbid: null as string | null }
+    const { error } = await supabase.from('collection').update(updates).eq('id', item.id)
+    if (error) { console.error('Cover remove failed:', error); showFlash('Remove failed: ' + error.message, false); return }
     await supabase.from('spins').update(updates).eq('username', username).ilike('artist', item.artist).ilike('album', item.album)
     // Update detail modal if open for this item
     if (detailRecord?.id === item.id) {
       setDetailRecord({ ...detailRecord, cover_url: null, cover_source: null, mbid: null })
     }
+    // Update local records immediately
+    setRecords(prev => prev.map(r => r.id === item.id ? { ...r, cover_url: null, cover_source: null, mbid: null } : r))
     showFlash('Cover removed')
-    loadCollection()
   }
 
   async function handleCustomUpload(item: Collection, file: File) {
@@ -531,11 +538,14 @@ export default function CollectionTab({ username }: { username: string }) {
       if (error) throw error
 
       const { data: urlData } = supabase.storage.from('covers').getPublicUrl(filename)
-      const updates = { cover_url: urlData.publicUrl, cover_source: 'manual_upload' as const, mbid: null }
+      const updates = { cover_url: urlData.publicUrl, cover_source: 'manual_upload' as const, mbid: null as string | null }
       await supabase.from('collection').update(updates).eq('id', item.id)
       await supabase.from('spins').update(updates).eq('username', username).ilike('artist', item.artist).ilike('album', item.album)
+      if (detailRecord?.id === item.id) {
+        setDetailRecord({ ...detailRecord, ...updates })
+      }
+      setRecords(prev => prev.map(r => r.id === item.id ? { ...r, ...updates } : r))
       showFlash('Cover uploaded!')
-      loadCollection()
     } catch (e) {
       console.error('Upload failed:', e)
       showFlash('Upload failed', false)
