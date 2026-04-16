@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabase'
+import { proxyCoverUrl } from '@/lib/cover'
 import type { Spin } from '@/types'
 
 const MONTH_MAP: Record<string, number> = {
@@ -357,7 +358,7 @@ export default function LogTab({ username }: { username: string }) {
                     >
                       {spin.cover_url ? (
                         <img
-                          src={spin.cover_url}
+                          src={proxyCoverUrl(spin.cover_url)!}
                           alt=""
                           width={36}
                           height={36}

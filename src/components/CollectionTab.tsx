@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef } from 'react'
 import { supabase } from '@/lib/supabase'
+import { proxyCoverUrl } from '@/lib/cover'
 import type { Collection, CoverSearchResult } from '@/types'
 
 type Form = { artist: string; album: string; genre: string; year: string; format: string; notes: string }
@@ -90,10 +91,11 @@ async function compressImage(file: File, maxSize = 600, quality = 0.85): Promise
 }
 
 function CoverThumb({ url, size = 40, onContextMenu }: { url: string | null; size?: number; onContextMenu?: (e: React.MouseEvent) => void }) {
-  if (url) {
+  const src = proxyCoverUrl(url)
+  if (src) {
     return (
       <img
-        src={url}
+        src={src}
         alt=""
         width={size}
         height={size}
@@ -227,7 +229,7 @@ function CoverSearchModal({ item, onSelect, onClose }: {
             >
               <div className="w-full aspect-square rounded-sm overflow-hidden bg-[rgba(232,220,200,0.05)] border border-[rgba(232,220,200,0.1)] group-hover:border-cream-dim transition-colors">
                 <img
-                  src={r.url}
+                  src={proxyCoverUrl(r.url) || r.url}
                   alt={r.title || ''}
                   loading="lazy"
                   className="w-full h-full object-cover"
@@ -271,7 +273,7 @@ function RefreshPreviewModal({ coverUrl, onAccept, onSkip, onClose }: {
       <div className="relative bg-surface border border-border rounded-lg p-5 w-full max-w-xs text-center">
         <h2 className="text-cream text-xs font-semibold uppercase tracking-widest mb-4">Use this cover?</h2>
         <img
-          src={coverUrl}
+          src={proxyCoverUrl(coverUrl) || coverUrl}
           alt="Cover preview"
           className="w-48 h-48 object-cover rounded-sm mx-auto mb-4"
           onError={(e) => { (e.target as HTMLImageElement).style.display = 'none' }}
@@ -462,6 +464,10 @@ export default function CollectionTab({ username }: { username: string }) {
     await supabase.from('collection').update(updates).eq('id', item.id)
     await supabase.from('spins').update(updates).eq('username', username).ilike('artist', item.artist).ilike('album', item.album)
     setRefreshPreview(null)
+    // Update detail modal if open for this item
+    if (detailRecord?.id === item.id) {
+      setDetailRecord({ ...detailRecord, cover_url: coverUrl, mbid, cover_source: cover_source as Collection['cover_source'] })
+    }
     showFlash('Cover updated!')
     loadCollection()
   }
@@ -475,13 +481,17 @@ export default function CollectionTab({ username }: { username: string }) {
 
   async function handleCoverSelected(cover: CoverSearchResult) {
     if (!coverSearchItem) return
-    const updates: Record<string, unknown> = {
+    const updates = {
       cover_url: cover.url,
-      cover_source: 'user_picked',
+      cover_source: 'user_picked' as const,
       mbid: cover.mbid || null,
     }
     await supabase.from('collection').update(updates).eq('id', coverSearchItem.id)
     await supabase.from('spins').update(updates).eq('username', username).ilike('artist', coverSearchItem.artist).ilike('album', coverSearchItem.album)
+    // Update detail modal if open for this item
+    if (detailRecord?.id === coverSearchItem.id) {
+      setDetailRecord({ ...detailRecord, ...updates })
+    }
     setCoverSearchItem(null)
     showFlash('Cover updated!')
     loadCollection()
@@ -497,6 +507,10 @@ export default function CollectionTab({ username }: { username: string }) {
     const updates = { cover_url: null, cover_source: null, mbid: null }
     await supabase.from('collection').update(updates).eq('id', item.id)
     await supabase.from('spins').update(updates).eq('username', username).ilike('artist', item.artist).ilike('album', item.album)
+    // Update detail modal if open for this item
+    if (detailRecord?.id === item.id) {
+      setDetailRecord({ ...detailRecord, cover_url: null, cover_source: null, mbid: null })
+    }
     showFlash('Cover removed')
     loadCollection()
   }
@@ -751,7 +765,7 @@ export default function CollectionTab({ username }: { username: string }) {
                 onContextMenu={(e) => handleCoverContextMenu(e, record)}
               >
                 {record.cover_url ? (
-                  <img src={record.cover_url} alt={record.album} loading="lazy" className="w-full h-full object-cover" onError={(e) => { (e.target as HTMLImageElement).style.display = 'none' }} />
+                  <img src={proxyCoverUrl(record.cover_url)!} alt={record.album} loading="lazy" className="w-full h-full object-cover" onError={(e) => { (e.target as HTMLImageElement).style.display = 'none' }} />
                 ) : (
                   <div className="w-full h-full flex items-center justify-center text-[32px] text-[rgba(232,220,200,0.2)]">♪</div>
                 )}
@@ -850,7 +864,7 @@ export default function CollectionTab({ username }: { username: string }) {
           <div className="relative bg-surface border border-border rounded-lg p-5 sm:p-6 w-full max-w-md max-h-[90vh] overflow-y-auto">
             {detailRecord.cover_url ? (
               <img
-                src={detailRecord.cover_url.replace('front-500', 'front-1200')}
+                src={proxyCoverUrl(detailRecord.cover_url.replace('front-500', 'front-1200'))!}
                 alt={detailRecord.album}
                 className="w-full max-w-[300px] mx-auto rounded-sm mb-4 cursor-pointer"
                 onError={(e) => { (e.target as HTMLImageElement).style.display = 'none' }}

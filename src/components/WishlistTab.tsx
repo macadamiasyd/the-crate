@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabase'
+import { proxyCoverUrl } from '@/lib/cover'
 import type { Wishlist } from '@/types'
 
 type Form = { artist: string; album: string; genre: string; year: string; format: string; notes: string }
@@ -219,7 +220,7 @@ export default function WishlistTab({ username }: { username: string }) {
             >
               {record.cover_url ? (
                 <img
-                  src={record.cover_url}
+                  src={proxyCoverUrl(record.cover_url)!}
                   alt=""
                   width={40}
                   height={40}
