@@ -127,7 +127,7 @@ export default function LogTab({ username }: { username: string }) {
       const updates: Record<string, unknown> = {}
       if (data.genre) updates.genre = data.genre
       if (data.year) updates.year = data.year
-      if (data.cover_url) updates.cover_url = data.cover_url
+      if (data.cover_url) { updates.cover_url = data.cover_url; updates.cover_source = data.cover_source }
       if (data.mbid) updates.mbid = data.mbid
       if (Object.keys(updates).length === 0) return
 
