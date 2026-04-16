@@ -89,6 +89,26 @@ export default function WishlistTab({ username }: { username: string }) {
     setLookingUp(false)
   }
 
+  async function autoLookupMeta(artist: string, album: string, id: string) {
+    try {
+      const res = await fetch('/api/lookup-meta', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ artist, album }),
+      })
+      const data = await res.json()
+      const updates: Record<string, unknown> = {}
+      if (data.genre) updates.genre = data.genre
+      if (data.year) updates.year = data.year
+      if (data.cover_url) updates.cover_url = data.cover_url
+      if (data.mbid) updates.mbid = data.mbid
+      if (Object.keys(updates).length > 0) {
+        await supabase.from('wishlist').update(updates).eq('id', id)
+        loadWishlist()
+      }
+    } catch { /* silent */ }
+  }
+
   async function handleSubmitModal(e: React.FormEvent) {
     e.preventDefault()
     if (!form.artist.trim() || !form.album.trim()) return
@@ -108,9 +128,14 @@ export default function WishlistTab({ username }: { username: string }) {
       if (!error) { setShowModal(false); showFlash('Updated!'); loadWishlist() }
       else showFlash('Update failed', false)
     } else {
-      const { error } = await supabase.from('wishlist').insert({ ...payload, username })
-      if (!error) { setShowModal(false); showFlash('Added to wishlist!'); loadWishlist() }
-      else showFlash('Failed to add', false)
+      const { data: newItem, error } = await supabase.from('wishlist').insert({ ...payload, username }).select().single()
+      if (!error && newItem) {
+        setShowModal(false)
+        showFlash('Added to wishlist!')
+        loadWishlist()
+        // Auto-lookup metadata in background
+        autoLookupMeta(payload.artist, payload.album, newItem.id)
+      } else showFlash('Failed to add', false)
     }
     setSubmitting(false)
   }
@@ -139,6 +164,8 @@ export default function WishlistTab({ username }: { username: string }) {
         genre: record.genre,
         year: record.year,
         format: record.format,
+        cover_url: record.cover_url,
+        mbid: record.mbid,
         notes: record.notes,
       })
       if (error) { showFlash('Failed to add to collection', false); return }
@@ -188,21 +215,45 @@ export default function WishlistTab({ username }: { username: string }) {
           {filtered.map(record => (
             <div
               key={record.id}
-              className="flex flex-col sm:flex-row sm:items-center justify-between px-2 sm:px-3 py-3 rounded group hover:bg-surface transition-colors"
+              className="flex items-center gap-3 px-2 sm:px-3 py-2.5 rounded group hover:bg-surface transition-colors"
             >
-              <div className="flex-1 min-w-0">
-                <div className="flex items-baseline gap-1.5 sm:gap-2 flex-wrap">
-                  <span className="text-cream text-sm font-medium truncate max-w-[60vw] sm:max-w-none">{record.album}</span>
-                  <span className="text-cream-dim text-sm">— {record.artist}</span>
-                  {record.year && <span className="text-cream-dim text-xs">({record.year})</span>}
+              {record.cover_url ? (
+                <img
+                  src={record.cover_url}
+                  alt=""
+                  width={40}
+                  height={40}
+                  loading="lazy"
+                  className="rounded-sm object-cover shrink-0"
+                  style={{ width: 40, height: 40, background: 'rgba(232,220,200,0.05)' }}
+                  onError={(e) => { (e.target as HTMLImageElement).style.display = 'none' }}
+                />
+              ) : (
+                <div
+                  className="rounded-sm flex items-center justify-center shrink-0"
+                  style={{
+                    width: 40, height: 40,
+                    background: 'rgba(232,220,200,0.05)',
+                    border: '1px solid rgba(232,220,200,0.1)',
+                    fontSize: 16,
+                    color: 'rgba(232,220,200,0.2)',
+                  }}
+                >♪</div>
+              )}
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between flex-1 min-w-0">
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-baseline gap-1.5 sm:gap-2 flex-wrap">
+                    <span className="text-cream text-sm font-medium truncate max-w-[50vw] sm:max-w-none">{record.album}</span>
+                    <span className="text-cream-dim text-sm">— {record.artist}</span>
+                    {record.year && <span className="text-cream-dim text-xs">({record.year})</span>}
+                  </div>
+                  <div className="flex gap-3 mt-0.5">
+                    {record.format && <span className="text-cream-dim text-xs">{record.format}</span>}
+                    {record.genre && <span className="text-cream-dim text-xs italic">{record.genre}</span>}
+                    {record.notes && <span className="text-cream-dim text-xs truncate max-w-[70vw] sm:max-w-xs">{record.notes}</span>}
+                  </div>
                 </div>
-                <div className="flex gap-3 mt-0.5">
-                  {record.format && <span className="text-cream-dim text-xs">{record.format}</span>}
-                  {record.genre && <span className="text-cream-dim text-xs italic">{record.genre}</span>}
-                  {record.notes && <span className="text-cream-dim text-xs truncate max-w-[70vw] sm:max-w-xs">{record.notes}</span>}
-                </div>
-              </div>
-              <div className="flex items-center gap-1.5 mt-2 sm:mt-0 sm:ml-4 sm:opacity-0 sm:group-hover:opacity-100 transition-all shrink-0">
+                <div className="flex items-center gap-1.5 mt-2 sm:mt-0 sm:ml-4 sm:opacity-0 sm:group-hover:opacity-100 transition-all shrink-0">
                 <button
                   onClick={() => handleBought(record)}
                   className="px-2 py-1 text-xs text-teal border border-teal/50 rounded hover:bg-teal hover:text-bg transition-colors"
@@ -222,6 +273,7 @@ export default function WishlistTab({ username }: { username: string }) {
                 >
                   ✕
                 </button>
+              </div>
               </div>
             </div>
           ))}

@@ -7,29 +7,71 @@ function capitalise(s: string): string {
   return s.replace(/\b\w/g, c => c.toUpperCase())
 }
 
-async function queryMusicBrainz(artist: string, album: string): Promise<{ year: number | null; genre: string | null }> {
+interface MbResult {
+  year: number | null
+  genre: string | null
+  cover_url: string | null
+  mbid: string | null
+}
+
+async function queryMusicBrainz(artist: string, album: string): Promise<MbResult> {
   const query = `artist:"${artist}" AND releasegroup:"${album}"`
-  const url = `https://musicbrainz.org/ws/2/release-group/?query=${encodeURIComponent(query)}&fmt=json&limit=1`
+  const url = `https://musicbrainz.org/ws/2/release-group/?query=${encodeURIComponent(query)}&fmt=json&limit=3`
 
   const res = await fetch(url, {
     headers: { 'User-Agent': 'TheCrate/1.0 (hello@macadamia.com.au)' },
   })
 
-  if (!res.ok) return { year: null, genre: null }
+  if (!res.ok) return { year: null, genre: null, cover_url: null, mbid: null }
 
   const data = await res.json()
-  const rg = data['release-groups']?.[0]
-  if (!rg) return { year: null, genre: null }
+  const releaseGroups = data['release-groups'] || []
+  if (releaseGroups.length === 0) return { year: null, genre: null, cover_url: null, mbid: null }
 
-  const yearStr = rg['first-release-date']?.substring(0, 4)
+  // Prefer "Album" type, skip compilations
+  const preferred = releaseGroups.find(
+    (rg: { 'primary-type'?: string; 'secondary-types'?: string[] }) =>
+      rg['primary-type'] === 'Album' && !rg['secondary-types']?.includes('Compilation')
+  ) || releaseGroups[0]
+
+  const mbid: string = preferred.id
+  const yearStr = preferred['first-release-date']?.substring(0, 4)
   const yearNum = yearStr ? parseInt(yearStr) : NaN
   const year = !isNaN(yearNum) && yearNum >= 1900 && yearNum <= new Date().getFullYear() + 1 ? yearNum : null
 
-  const tags: Array<{ name: string; count: number }> = rg['tags'] || []
+  const tags: Array<{ name: string; count: number }> = preferred['tags'] || []
   tags.sort((a, b) => b.count - a.count)
   const genre = tags[0]?.name ? capitalise(tags[0].name) : null
 
-  return { year, genre }
+  // Try Cover Art Archive
+  let cover_url: string | null = null
+  try {
+    const coverUrl = `https://coverartarchive.org/release-group/${mbid}/front-500`
+    const coverRes = await fetch(coverUrl, { method: 'HEAD', redirect: 'follow' })
+    if (coverRes.ok) {
+      cover_url = coverUrl
+    }
+  } catch { /* no cover available */ }
+
+  return { year, genre, cover_url, mbid }
+}
+
+async function queryItunes(artist: string, album: string): Promise<{ cover_url: string | null; year: number | null; genre: string | null }> {
+  try {
+    const itunesUrl = `https://itunes.apple.com/search?term=${encodeURIComponent(artist + ' ' + album)}&entity=album&limit=1`
+    const res = await fetch(itunesUrl)
+    const data = await res.json()
+    if (data.results?.length > 0) {
+      const r = data.results[0]
+      const cover_url = r.artworkUrl100?.replace('100x100', '600x600') || null
+      const yearStr = r.releaseDate?.substring(0, 4)
+      const yearNum = yearStr ? parseInt(yearStr) : NaN
+      const year = !isNaN(yearNum) && yearNum >= 1900 && yearNum <= new Date().getFullYear() + 1 ? yearNum : null
+      const genre = r.primaryGenreName || null
+      return { cover_url, year, genre }
+    }
+  } catch { /* silent */ }
+  return { cover_url: null, year: null, genre: null }
 }
 
 async function queryHaiku(artist: string, album: string): Promise<{ year: number | null; genre: string | null }> {
@@ -66,26 +108,32 @@ export async function POST(req: NextRequest) {
   try {
     const { artist, album } = await req.json()
     if (!artist || !album) {
-      return NextResponse.json({ year: null, genre: null }, { status: 400 })
+      return NextResponse.json({ year: null, genre: null, cover_url: null, mbid: null }, { status: 400 })
     }
 
-    // Try MusicBrainz first
+    // Step 1: MusicBrainz (year, genre, cover, mbid)
     const mb = await queryMusicBrainz(artist, album)
 
-    // If we got both, return immediately
-    if (mb.year && mb.genre) {
-      return NextResponse.json(mb)
+    let { year, genre, cover_url, mbid } = mb
+
+    // Step 2: iTunes fallback for missing cover (also fills year/genre gaps)
+    if (!cover_url) {
+      const itunes = await queryItunes(artist, album)
+      if (itunes.cover_url) cover_url = itunes.cover_url
+      if (!year && itunes.year) year = itunes.year
+      if (!genre && itunes.genre) genre = itunes.genre
     }
 
-    // Fall back to Haiku for missing fields
-    const haiku = await queryHaiku(artist, album)
+    // Step 3: Haiku fallback for year/genre only
+    if (!year || !genre) {
+      const haiku = await queryHaiku(artist, album)
+      if (!year && haiku.year) year = haiku.year
+      if (!genre && haiku.genre) genre = haiku.genre
+    }
 
-    return NextResponse.json({
-      year: mb.year ?? haiku.year,
-      genre: mb.genre ?? haiku.genre,
-    })
+    return NextResponse.json({ year, genre, cover_url, mbid })
   } catch (error) {
     console.error('/api/lookup-meta error:', error)
-    return NextResponse.json({ year: null, genre: null }, { status: 500 })
+    return NextResponse.json({ year: null, genre: null, cover_url: null, mbid: null }, { status: 500 })
   }
 }

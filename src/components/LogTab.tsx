@@ -83,7 +83,7 @@ export default function LogTab({ username }: { username: string }) {
     setLoading(false)
   }
 
-  async function ensureInCollection(artist: string, album: string, genre: string | null, year: number | null, format: string | null) {
+  async function ensureInCollection(artist: string, album: string, genre: string | null, year: number | null, format: string | null, cover_url: string | null = null, mbid: string | null = null) {
     const { data } = await supabase
       .from('collection')
       .select('id')
@@ -92,7 +92,7 @@ export default function LogTab({ username }: { username: string }) {
       .ilike('album', album)
       .maybeSingle()
     if (!data) {
-      await supabase.from('collection').insert({ username, artist, album, genre, year, format })
+      await supabase.from('collection').insert({ username, artist, album, genre, year, format, cover_url, mbid })
     }
   }
 
@@ -116,7 +116,7 @@ export default function LogTab({ username }: { username: string }) {
     setLookingUp(false)
   }
 
-  async function autoLookupGenre(artist: string, album: string) {
+  async function autoLookupMeta(artist: string, album: string) {
     try {
       const res = await fetch('/api/lookup-meta', {
         method: 'POST',
@@ -127,10 +127,12 @@ export default function LogTab({ username }: { username: string }) {
       const updates: Record<string, unknown> = {}
       if (data.genre) updates.genre = data.genre
       if (data.year) updates.year = data.year
+      if (data.cover_url) updates.cover_url = data.cover_url
+      if (data.mbid) updates.mbid = data.mbid
       if (Object.keys(updates).length === 0) return
 
-      await supabase.from('spins').update(updates).eq('username', username).ilike('artist', artist).ilike('album', album).is('genre', null)
-      await supabase.from('collection').update(updates).eq('username', username).ilike('artist', artist).ilike('album', album).is('genre', null)
+      await supabase.from('spins').update(updates).eq('username', username).ilike('artist', artist).ilike('album', album)
+      await supabase.from('collection').update(updates).eq('username', username).ilike('artist', artist).ilike('album', album)
       loadSpins()
     } catch { /* silent */ }
   }
@@ -153,11 +155,11 @@ export default function LogTab({ username }: { username: string }) {
     const { error } = await supabase.from('spins').insert(spin)
     if (!error) {
       await ensureInCollection(spin.artist, spin.album, spin.genre, spin.year, spin.format)
-      const needsLookup = !spin.genre
       setForm({ artist: '', album: '', genre: '', year: '', format: '', date_played: today })
       showFlash('Spin logged!')
       loadSpins()
-      if (needsLookup) autoLookupGenre(spin.artist, spin.album)
+      // Auto-lookup metadata (cover, genre, year) in background
+      autoLookupMeta(spin.artist, spin.album)
     } else {
       showFlash('Failed to log spin', false)
     }
@@ -351,11 +353,34 @@ export default function LogTab({ username }: { username: string }) {
                   {grouped[date].map(spin => (
                     <div
                       key={spin.id}
-                      className="flex items-start sm:items-center justify-between px-2 sm:px-3 py-2.5 rounded group hover:bg-surface2 transition-colors"
+                      className="flex items-center gap-3 px-2 sm:px-3 py-2.5 rounded group hover:bg-surface2 transition-colors"
                     >
+                      {spin.cover_url ? (
+                        <img
+                          src={spin.cover_url}
+                          alt=""
+                          width={36}
+                          height={36}
+                          loading="lazy"
+                          className="rounded-sm object-cover shrink-0"
+                          style={{ width: 36, height: 36, background: 'rgba(232,220,200,0.05)' }}
+                          onError={(e) => { (e.target as HTMLImageElement).style.display = 'none' }}
+                        />
+                      ) : (
+                        <div
+                          className="rounded-sm flex items-center justify-center shrink-0"
+                          style={{
+                            width: 36, height: 36,
+                            background: 'rgba(232,220,200,0.05)',
+                            border: '1px solid rgba(232,220,200,0.1)',
+                            fontSize: 14,
+                            color: 'rgba(232,220,200,0.2)',
+                          }}
+                        >♪</div>
+                      )}
                       <div className="flex-1 min-w-0">
                         <div className="flex items-baseline gap-1.5 sm:gap-2 flex-wrap">
-                          <span className="text-cream text-sm truncate max-w-[60vw] sm:max-w-none">{spin.album}</span>
+                          <span className="text-cream text-sm truncate max-w-[50vw] sm:max-w-none">{spin.album}</span>
                           <span className="text-cream-dim text-sm">— {spin.artist}</span>
                         </div>
                         {(spin.year || spin.genre || spin.format) && (

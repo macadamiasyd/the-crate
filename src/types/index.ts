@@ -6,6 +6,8 @@ export interface Spin {
   genre: string | null
   year: number | null
   format: string | null
+  cover_url: string | null
+  mbid: string | null
   date_played: string
   created_at: string
 }
@@ -18,6 +20,8 @@ export interface Collection {
   genre: string | null
   year: number | null
   format: string | null
+  cover_url: string | null
+  mbid: string | null
   notes: string | null
   created_at: string
 }

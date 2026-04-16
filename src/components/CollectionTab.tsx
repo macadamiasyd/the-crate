@@ -36,10 +36,7 @@ function parseCsv(text: string): Array<{ artist: string; album: string; genre?: 
   const lines = text.split('\n').map(l => l.trim()).filter(Boolean)
   if (lines.length === 0) return []
 
-  // Detect separator: if first line has commas, use comma; if tabs, use tab
   const sep = lines[0].includes('\t') ? '\t' : ','
-
-  // Check if first line is a header
   const firstCols = lines[0].split(sep).map(s => s.trim().toLowerCase().replace(/^["']|["']$/g, ''))
   const headerLike = firstCols.some(c => ['artist', 'album', 'title', 'genre', 'year', 'format'].includes(c))
 
@@ -66,7 +63,6 @@ function parseCsv(text: string): Array<{ artist: string; album: string; genre?: 
       year = cols[headerMap['year']] || ''
       format = cols[headerMap['format']] || ''
     } else if (cols.length >= 2) {
-      // Default: Artist, Album
       artist = cols[0]
       album = cols[1]
       if (cols.length >= 3) genre = cols[2]
@@ -84,7 +80,40 @@ function parseCsv(text: string): Array<{ artist: string; album: string; genre?: 
   return results
 }
 
+function CoverThumb({ url, size = 40 }: { url: string | null; size?: number }) {
+  if (url) {
+    return (
+      <img
+        src={url}
+        alt=""
+        width={size}
+        height={size}
+        loading="lazy"
+        className="rounded-sm object-cover shrink-0"
+        style={{ width: size, height: size, background: 'rgba(232,220,200,0.05)' }}
+        onError={(e) => { (e.target as HTMLImageElement).style.display = 'none' }}
+      />
+    )
+  }
+  return (
+    <div
+      className="rounded-sm flex items-center justify-center shrink-0"
+      style={{
+        width: size,
+        height: size,
+        background: 'rgba(232,220,200,0.05)',
+        border: '1px solid rgba(232,220,200,0.1)',
+        fontSize: size * 0.4,
+        color: 'rgba(232,220,200,0.2)',
+      }}
+    >
+      ♪
+    </div>
+  )
+}
+
 type Flash = { text: string; ok: boolean }
+type ViewMode = 'list' | 'grid'
 
 export default function CollectionTab({ username }: { username: string }) {
   const [records, setRecords] = useState<Collection[]>([])
@@ -104,12 +133,27 @@ export default function CollectionTab({ username }: { username: string }) {
   const [flash, setFlash] = useState<Flash | null>(null)
   const [autoFilling, setAutoFilling] = useState(false)
   const [autoFillProgress, setAutoFillProgress] = useState('')
+  const [backfilling, setBackfilling] = useState(false)
+  const [backfillProgress, setBackfillProgress] = useState('')
+  const [viewMode, setViewMode] = useState<ViewMode>(() => {
+    if (typeof window !== 'undefined') {
+      return (localStorage.getItem('crate-view-mode') as ViewMode) || 'list'
+    }
+    return 'list'
+  })
+  const [detailRecord, setDetailRecord] = useState<Collection | null>(null)
+  const [detailSpins, setDetailSpins] = useState<Array<{ id: string; date_played: string }>>([])
 
   useEffect(() => { loadCollection() }, [username])
 
   function showFlash(text: string, ok = true) {
     setFlash({ text, ok })
     setTimeout(() => setFlash(null), 3000)
+  }
+
+  function setView(mode: ViewMode) {
+    setViewMode(mode)
+    localStorage.setItem('crate-view-mode', mode)
   }
 
   async function loadCollection() {
@@ -155,6 +199,18 @@ export default function CollectionTab({ username }: { username: string }) {
     setShowModal(true)
   }
 
+  async function openDetail(r: Collection) {
+    setDetailRecord(r)
+    const { data } = await supabase
+      .from('spins')
+      .select('id, date_played')
+      .eq('username', username)
+      .ilike('artist', r.artist)
+      .ilike('album', r.album)
+      .order('date_played', { ascending: false })
+    setDetailSpins(data || [])
+  }
+
   async function lookupMeta() {
     if (!form.artist.trim() || !form.album.trim()) return
     setLookingUp(true)
@@ -175,7 +231,7 @@ export default function CollectionTab({ username }: { username: string }) {
     setLookingUp(false)
   }
 
-  async function autoLookupGenre(artist: string, album: string) {
+  async function autoLookupMeta(artist: string, album: string, id: string) {
     try {
       const res = await fetch('/api/lookup-meta', {
         method: 'POST',
@@ -183,9 +239,16 @@ export default function CollectionTab({ username }: { username: string }) {
         body: JSON.stringify({ artist, album }),
       })
       const data = await res.json()
-      if (data.genre) {
-        await supabase.from('collection').update({ genre: data.genre }).eq('username', username).ilike('artist', artist).ilike('album', album).is('genre', null)
-        await supabase.from('spins').update({ genre: data.genre }).eq('username', username).ilike('artist', artist).ilike('album', album).is('genre', null)
+      const updates: Record<string, unknown> = {}
+      if (data.genre) updates.genre = data.genre
+      if (data.cover_url) updates.cover_url = data.cover_url
+      if (data.mbid) updates.mbid = data.mbid
+      if (data.year) updates.year = data.year
+      if (Object.keys(updates).length > 0) {
+        await supabase.from('collection').update(updates).eq('id', id)
+        // Mirror to spins
+        await supabase.from('spins').update(updates).eq('username', username).ilike('artist', artist).ilike('album', album)
+        loadCollection()
       }
     } catch { /* silent */ }
   }
@@ -210,18 +273,57 @@ export default function CollectionTab({ username }: { username: string }) {
         const updates: Record<string, unknown> = {}
         if (data.genre) updates.genre = data.genre
         if (data.year && !r.year) updates.year = data.year
+        if (data.cover_url && !r.cover_url) updates.cover_url = data.cover_url
+        if (data.mbid && !r.mbid) updates.mbid = data.mbid
         if (Object.keys(updates).length > 0) {
           await supabase.from('collection').update(updates).eq('id', r.id)
+          await supabase.from('spins').update(updates).eq('username', username).ilike('artist', r.artist).ilike('album', r.album)
           updated++
         }
       } catch { /* continue */ }
-      // MusicBrainz rate limit: 1 req/sec
       if (i < missing.length - 1) await new Promise(res => setTimeout(res, 1100))
     }
 
     setAutoFilling(false)
     setAutoFillProgress('')
     showFlash(`Updated ${updated} of ${missing.length} records`)
+    loadCollection()
+  }
+
+  async function handleBackfillCovers() {
+    const missing = records.filter(r => !r.cover_url)
+    if (missing.length === 0) { showFlash('All covers already filled'); return }
+    if (!confirm(`Look up covers for ${missing.length} records? At ~1 sec each, this will take ~${Math.ceil(missing.length / 60)} min.`)) return
+    setBackfilling(true)
+    let updated = 0
+
+    for (let i = 0; i < missing.length; i++) {
+      const r = missing[i]
+      setBackfillProgress(`${i + 1} of ${missing.length}…`)
+      try {
+        const res = await fetch('/api/lookup-meta', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ artist: r.artist, album: r.album }),
+        })
+        const data = await res.json()
+        const updates: Record<string, unknown> = {}
+        if (data.cover_url) updates.cover_url = data.cover_url
+        if (data.mbid) updates.mbid = data.mbid
+        if (data.year && !r.year) updates.year = data.year
+        if (data.genre && !r.genre) updates.genre = data.genre
+        if (Object.keys(updates).length > 0) {
+          await supabase.from('collection').update(updates).eq('id', r.id)
+          await supabase.from('spins').update(updates).eq('username', username).ilike('artist', r.artist).ilike('album', r.album)
+          updated++
+        }
+      } catch { /* continue */ }
+      if (i < missing.length - 1) await new Promise(res => setTimeout(res, 1100))
+    }
+
+    setBackfilling(false)
+    setBackfillProgress('')
+    showFlash(`Done — updated ${updated} of ${missing.length} records`)
     loadCollection()
   }
 
@@ -255,12 +357,13 @@ export default function CollectionTab({ username }: { username: string }) {
         loadCollection()
       } else showFlash('Update failed', false)
     } else {
-      const { error } = await supabase.from('collection').insert({ ...payload, username })
-      if (!error) {
+      const { data: newItem, error } = await supabase.from('collection').insert({ ...payload, username }).select().single()
+      if (!error && newItem) {
         setShowModal(false)
         showFlash('Added to collection!')
         loadCollection()
-        if (!payload.genre) autoLookupGenre(payload.artist, payload.album)
+        // Auto-lookup metadata in background
+        autoLookupMeta(payload.artist, payload.album, newItem.id)
       } else showFlash('Failed to add', false)
     }
     setSubmitting(false)
@@ -282,6 +385,8 @@ export default function CollectionTab({ username }: { username: string }) {
       genre: record.genre,
       year: record.year,
       format: record.format,
+      cover_url: record.cover_url,
+      mbid: record.mbid,
       date_played: today,
     })
     if (!error) showFlash(`Logged: ${record.album}`)
@@ -373,6 +478,13 @@ export default function CollectionTab({ username }: { username: string }) {
     e.target.value = ''
   }
 
+  function formatDate(dateStr: string) {
+    const [y, m, d] = dateStr.split('-').map(Number)
+    return new Date(y, m - 1, d).toLocaleDateString('en-US', {
+      month: 'short', day: 'numeric', year: 'numeric',
+    })
+  }
+
   return (
     <div className="space-y-5">
       {flash && (
@@ -389,7 +501,24 @@ export default function CollectionTab({ username }: { username: string }) {
           placeholder="Search artist, album, genre, format…"
           className="flex-1"
         />
-        <div className="flex gap-2 sm:gap-3">
+        <div className="flex gap-2 sm:gap-3 flex-wrap">
+          {/* View toggle */}
+          <div className="flex border border-border rounded overflow-hidden shrink-0">
+            <button
+              onClick={() => setView('list')}
+              className={`px-2.5 py-2 text-xs transition-colors ${viewMode === 'list' ? 'bg-surface2 text-cream' : 'text-cream-dim hover:text-cream'}`}
+              title="List view"
+            >
+              ☰
+            </button>
+            <button
+              onClick={() => setView('grid')}
+              className={`px-2.5 py-2 text-xs transition-colors ${viewMode === 'grid' ? 'bg-surface2 text-cream' : 'text-cream-dim hover:text-cream'}`}
+              title="Grid view"
+            >
+              ⊞
+            </button>
+          </div>
           <button
             onClick={openAdd}
             className="flex-1 sm:flex-none px-4 py-2 bg-accent text-cream rounded text-sm font-medium hover:opacity-90 transition-opacity whitespace-nowrap shrink-0"
@@ -408,10 +537,17 @@ export default function CollectionTab({ username }: { username: string }) {
           </label>
           <button
             onClick={handleAutoFillGenres}
-            disabled={autoFilling}
+            disabled={autoFilling || backfilling}
             className="flex-1 sm:flex-none px-3 py-2 bg-surface2 text-teal border border-teal/40 rounded text-sm hover:bg-teal hover:text-bg transition-colors whitespace-nowrap shrink-0 disabled:opacity-50"
           >
             {autoFilling ? autoFillProgress : 'Auto-fill Genres'}
+          </button>
+          <button
+            onClick={handleBackfillCovers}
+            disabled={backfilling || autoFilling}
+            className="flex-1 sm:flex-none px-3 py-2 bg-surface2 text-accent border border-accent/40 rounded text-sm hover:bg-accent hover:text-cream transition-colors whitespace-nowrap shrink-0 disabled:opacity-50"
+          >
+            {backfilling ? backfillProgress : 'Auto-fill Covers'}
           </button>
         </div>
       </div>
@@ -445,55 +581,160 @@ export default function CollectionTab({ username }: { username: string }) {
         {loading ? 'Loading…' : `${filtered.length}${filtered.length !== records.length ? ` of ${records.length}` : ''} record${records.length !== 1 ? 's' : ''}`}
       </div>
 
-      {/* List */}
-      {!loading && filtered.length === 0 ? (
+      {/* Grid View */}
+      {viewMode === 'grid' && !loading && filtered.length > 0 && (
+        <div
+          className="grid gap-4"
+          style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))' }}
+        >
+          {filtered.map(record => (
+            <div
+              key={record.id}
+              className="flex flex-col gap-1.5 cursor-pointer group"
+              onClick={() => openDetail(record)}
+            >
+              <div className="w-full aspect-square rounded-sm overflow-hidden bg-[rgba(232,220,200,0.05)] border border-[rgba(232,220,200,0.1)] group-hover:border-cream-dim transition-colors">
+                {record.cover_url ? (
+                  <img
+                    src={record.cover_url}
+                    alt={record.album}
+                    loading="lazy"
+                    className="w-full h-full object-cover"
+                    onError={(e) => { (e.target as HTMLImageElement).style.display = 'none' }}
+                  />
+                ) : (
+                  <div className="w-full h-full flex items-center justify-center text-[32px] text-[rgba(232,220,200,0.2)]">
+                    ♪
+                  </div>
+                )}
+              </div>
+              <div className="leading-tight">
+                <div className="text-cream text-xs font-medium truncate">{record.artist}</div>
+                <div className="text-cream-dim text-xs italic truncate">{record.album}</div>
+                {record.year && <div className="text-cream-dim text-[11px]">{record.year}</div>}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* List View */}
+      {viewMode === 'list' && !loading && filtered.length === 0 ? (
         <p className="text-cream-dim text-sm">
           {records.length === 0 ? 'No records yet. Add your first above.' : 'No results.'}
         </p>
-      ) : (
+      ) : viewMode === 'list' && !loading && (
         <div className="space-y-px">
           {filtered.map(record => (
             <div
               key={record.id}
-              className="flex flex-col sm:flex-row sm:items-center justify-between px-2 sm:px-3 py-3 rounded group hover:bg-surface transition-colors"
+              className="flex items-center gap-3 px-2 sm:px-3 py-2.5 rounded group hover:bg-surface transition-colors"
             >
-              <div className="flex-1 min-w-0">
-                <div className="flex items-baseline gap-1.5 sm:gap-2 flex-wrap">
-                  <span className="text-cream text-sm font-medium truncate max-w-[60vw] sm:max-w-none">{record.album}</span>
-                  <span className="text-cream-dim text-sm">— {record.artist}</span>
-                  {record.year && <span className="text-cream-dim text-xs">({record.year})</span>}
-                </div>
-                <div className="flex gap-3 mt-0.5">
-                  {record.format && <span className="text-cream-dim text-xs">{record.format}</span>}
-                  {record.genre && <span className="text-cream-dim text-xs italic">{record.genre}</span>}
-                  {record.notes && (
-                    <span className="text-cream-dim text-xs truncate max-w-[70vw] sm:max-w-xs">{record.notes}</span>
-                  )}
-                </div>
+              <div className="cursor-pointer shrink-0" onClick={() => openDetail(record)}>
+                <CoverThumb url={record.cover_url} size={40} />
               </div>
-              <div className="flex items-center gap-1.5 mt-2 sm:mt-0 sm:ml-4 sm:opacity-0 sm:group-hover:opacity-100 transition-all shrink-0">
-                <button
-                  onClick={() => handleSpinIt(record)}
-                  className="px-2 py-1 text-xs text-teal border border-teal/50 rounded hover:bg-teal hover:text-bg transition-colors"
-                  title="Log a spin today"
-                >
-                  ▶ Spin It
-                </button>
-                <button
-                  onClick={() => openEdit(record)}
-                  className="px-2 py-1 text-xs text-cream-dim border border-border rounded hover:text-cream transition-colors"
-                >
-                  Edit
-                </button>
-                <button
-                  onClick={() => handleDelete(record.id)}
-                  className="px-2 py-1 text-xs text-cream-dim border border-border rounded hover:text-accent transition-colors"
-                >
-                  ✕
-                </button>
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between flex-1 min-w-0">
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-baseline gap-1.5 sm:gap-2 flex-wrap">
+                    <span className="text-cream text-sm font-medium truncate max-w-[50vw] sm:max-w-none">{record.album}</span>
+                    <span className="text-cream-dim text-sm">— {record.artist}</span>
+                    {record.year && <span className="text-cream-dim text-xs">({record.year})</span>}
+                  </div>
+                  <div className="flex gap-3 mt-0.5">
+                    {record.format && <span className="text-cream-dim text-xs">{record.format}</span>}
+                    {record.genre && <span className="text-cream-dim text-xs italic">{record.genre}</span>}
+                    {record.notes && (
+                      <span className="text-cream-dim text-xs truncate max-w-[70vw] sm:max-w-xs">{record.notes}</span>
+                    )}
+                  </div>
+                </div>
+                <div className="flex items-center gap-1.5 mt-2 sm:mt-0 sm:ml-4 sm:opacity-0 sm:group-hover:opacity-100 transition-all shrink-0">
+                  <button
+                    onClick={() => handleSpinIt(record)}
+                    className="px-2 py-1 text-xs text-teal border border-teal/50 rounded hover:bg-teal hover:text-bg transition-colors"
+                    title="Log a spin today"
+                  >
+                    Spin It
+                  </button>
+                  <button
+                    onClick={() => openEdit(record)}
+                    className="px-2 py-1 text-xs text-cream-dim border border-border rounded hover:text-cream transition-colors"
+                  >
+                    Edit
+                  </button>
+                  <button
+                    onClick={() => handleDelete(record.id)}
+                    className="px-2 py-1 text-xs text-cream-dim border border-border rounded hover:text-accent transition-colors"
+                  >
+                    ✕
+                  </button>
+                </div>
               </div>
             </div>
           ))}
+        </div>
+      )}
+
+      {/* Detail Modal */}
+      {detailRecord && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/70" onClick={() => setDetailRecord(null)} />
+          <div className="relative bg-surface border border-border rounded-lg p-5 sm:p-6 w-full max-w-md max-h-[90vh] overflow-y-auto">
+            {detailRecord.cover_url && (
+              <img
+                src={detailRecord.cover_url.replace('front-500', 'front-1200')}
+                alt={detailRecord.album}
+                className="w-full max-w-[300px] mx-auto rounded-sm mb-4"
+                onError={(e) => { (e.target as HTMLImageElement).style.display = 'none' }}
+              />
+            )}
+            <h2 className="text-cream text-lg font-medium">{detailRecord.artist}</h2>
+            <h3 className="text-cream-dim text-base italic">{detailRecord.album}</h3>
+            <div className="flex gap-2 mt-1 text-cream-dim text-sm">
+              {detailRecord.year && <span>{detailRecord.year}</span>}
+              {detailRecord.year && detailRecord.genre && <span>·</span>}
+              {detailRecord.genre && <span>{detailRecord.genre}</span>}
+              {detailRecord.format && <span>· {detailRecord.format}</span>}
+            </div>
+            {detailRecord.notes && (
+              <p className="text-cream-dim text-xs mt-2">{detailRecord.notes}</p>
+            )}
+
+            {/* Play history */}
+            {detailSpins.length > 0 && (
+              <div className="mt-4 pt-4 border-t border-border">
+                <h4 className="text-cream text-xs font-semibold uppercase tracking-widest mb-2">
+                  Plays ({detailSpins.length})
+                </h4>
+                <div className="space-y-1 max-h-40 overflow-y-auto">
+                  {detailSpins.map(s => (
+                    <div key={s.id} className="text-cream-dim text-xs">{formatDate(s.date_played)}</div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            <div className="flex gap-3 mt-5">
+              <button
+                onClick={() => { handleSpinIt(detailRecord); setDetailRecord(null) }}
+                className="px-3 py-2 text-xs text-teal border border-teal/50 rounded hover:bg-teal hover:text-bg transition-colors"
+              >
+                Spin It
+              </button>
+              <button
+                onClick={() => { setDetailRecord(null); openEdit(detailRecord) }}
+                className="px-3 py-2 text-xs text-cream-dim border border-border rounded hover:text-cream transition-colors"
+              >
+                Edit
+              </button>
+              <button
+                onClick={() => setDetailRecord(null)}
+                className="px-3 py-2 text-xs text-cream-dim border border-border rounded hover:text-cream transition-colors ml-auto"
+              >
+                Close
+              </button>
+            </div>
+          </div>
         </div>
       )}
 
@@ -550,7 +791,7 @@ export default function CollectionTab({ username }: { username: string }) {
                       type="button"
                       onClick={lookupMeta}
                       disabled={lookingUp || !form.artist.trim() || !form.album.trim()}
-                      title="Auto-lookup year via Claude"
+                      title="Auto-lookup metadata"
                       className="px-2 bg-surface2 text-teal border border-border rounded text-xs hover:border-teal transition-colors disabled:opacity-30 shrink-0"
                     >
                       {lookingUp ? '…' : '?'}
