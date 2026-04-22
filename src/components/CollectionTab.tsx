@@ -328,6 +328,7 @@ export default function CollectionTab({ username }: { username: string }) {
   const [detailShowCredits, setDetailShowCredits] = useState(false)
   const [backfillingNotes, setBackfillingNotes] = useState(false)
   const [backfillNotesProgress, setBackfillNotesProgress] = useState('')
+  const triedNotesIds = useRef<Set<string>>(new Set())
 
   // Cover management state
   const [coverMenu, setCoverMenu] = useState<{ x: number; y: number; item: Collection } | null>(null)
@@ -602,7 +603,10 @@ export default function CollectionTab({ username }: { username: string }) {
     const BATCH = 50
 
     // Use already-loaded records — no DB query needed, avoids missing-column issues
-    const candidates = records.filter(r => !r.notes_text && r.notes_source !== 'manual')
+    // Also exclude IDs we already tried this session (even if they returned nothing)
+    const candidates = records.filter(r =>
+      !r.notes_text && r.notes_source !== 'manual' && !triedNotesIds.current.has(r.id)
+    )
 
     if (candidates.length === 0) {
       showFlash('All albums already have notes')
@@ -632,6 +636,7 @@ export default function CollectionTab({ username }: { username: string }) {
           setRecords(prev => prev.map(r => r.id === item.id ? { ...r, ...updates } as Collection : r))
         }
       } catch { /* continue */ }
+      triedNotesIds.current.add(item.id)
       if (i < batch.length - 1) await new Promise(r => setTimeout(r, 2000))
     }
 
