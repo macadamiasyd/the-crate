@@ -600,20 +600,17 @@ export default function CollectionTab({ username }: { username: string }) {
   async function handleBackfillNotes() {
     setBackfillingNotes(true)
     const BATCH = 50
-    const { data: missing } = await supabase
-      .from('collection')
-      .select('id, artist, album, notes_source')
-      .eq('username', username)
-      .or('notes_text.is.null,notes_text.eq.')
-      .neq('notes_source', 'manual')
 
-    if (!missing || missing.length === 0) {
+    // Use already-loaded records — no DB query needed, avoids missing-column issues
+    const candidates = records.filter(r => !r.notes_text && r.notes_source !== 'manual')
+
+    if (candidates.length === 0) {
       showFlash('All albums already have notes')
       setBackfillingNotes(false)
       return
     }
 
-    const batch = missing.slice(0, BATCH)
+    const batch = candidates.slice(0, BATCH)
     let found = 0
 
     for (let i = 0; i < batch.length; i++) {
@@ -631,6 +628,8 @@ export default function CollectionTab({ username }: { username: string }) {
         if (data.credits) updates.credits = data.credits
         if (Object.keys(updates).length > 0) {
           await supabase.from('collection').update(updates).eq('id', item.id)
+          // Update local state so progress is visible without full reload
+          setRecords(prev => prev.map(r => r.id === item.id ? { ...r, ...updates } as Collection : r))
         }
       } catch { /* continue */ }
       if (i < batch.length - 1) await new Promise(r => setTimeout(r, 2000))
@@ -638,9 +637,8 @@ export default function CollectionTab({ username }: { username: string }) {
 
     setBackfillingNotes(false)
     setBackfillNotesProgress('')
-    const remaining = missing.length - batch.length
-    showFlash(`Found notes for ${found} of ${batch.length}${remaining > 0 ? ` — ${remaining} remaining, tap again to continue` : ''}`)
-    loadCollection()
+    const remaining = candidates.length - batch.length
+    showFlash(`Found notes for ${found} of ${batch.length}${remaining > 0 ? ` — ${remaining} more, tap again to continue` : ''}`)
   }
 
   /* ── Batch operations ── */
