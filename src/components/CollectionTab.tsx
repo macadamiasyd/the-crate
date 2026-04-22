@@ -322,6 +322,12 @@ export default function CollectionTab({ username }: { username: string }) {
   })
   const [detailRecord, setDetailRecord] = useState<Collection | null>(null)
   const [detailSpins, setDetailSpins] = useState<Array<{ id: string; date_played: string }>>([])
+  const [detailNotesLoading, setDetailNotesLoading] = useState(false)
+  const [detailNotesEditing, setDetailNotesEditing] = useState(false)
+  const [detailNotesEditText, setDetailNotesEditText] = useState('')
+  const [detailShowCredits, setDetailShowCredits] = useState(false)
+  const [backfillingNotes, setBackfillingNotes] = useState(false)
+  const [backfillNotesProgress, setBackfillNotesProgress] = useState('')
 
   // Cover management state
   const [coverMenu, setCoverMenu] = useState<{ x: number; y: number; item: Collection } | null>(null)
@@ -377,6 +383,8 @@ export default function CollectionTab({ username }: { username: string }) {
 
   async function openDetail(r: Collection) {
     setDetailRecord(r)
+    setDetailNotesEditing(false)
+    setDetailShowCredits(false)
     const { data } = await supabase.from('spins').select('id, date_played').eq('username', username).ilike('artist', r.artist).ilike('album', r.album).order('date_played', { ascending: false })
     setDetailSpins(data || [])
   }
@@ -550,6 +558,89 @@ export default function CollectionTab({ username }: { username: string }) {
       console.error('Upload failed:', e)
       showFlash('Upload failed', false)
     }
+  }
+
+  /* ── Notes ── */
+
+  async function fetchAndCacheNotes(item: Collection) {
+    setDetailNotesLoading(true)
+    try {
+      const res = await fetch('/api/lookup-notes', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ artist: item.artist, album: item.album }),
+      })
+      const data = await res.json()
+
+      const updates: Partial<Collection> = {}
+      if (data.notes_text) { updates.notes_text = data.notes_text; updates.notes_source = data.notes_source }
+      if (data.credits) updates.credits = data.credits
+
+      if (Object.keys(updates).length > 0) {
+        await supabase.from('collection').update(updates).eq('id', item.id)
+        const updated = { ...item, ...updates }
+        setDetailRecord(updated)
+        setRecords(prev => prev.map(r => r.id === item.id ? updated : r))
+      }
+    } catch (e) {
+      console.error('Notes fetch failed:', e)
+    }
+    setDetailNotesLoading(false)
+  }
+
+  async function saveManualNotes(item: Collection, text: string) {
+    const updates = { notes_text: text, notes_source: 'manual' as const }
+    await supabase.from('collection').update(updates).eq('id', item.id)
+    const updated = { ...item, ...updates }
+    setDetailRecord(updated)
+    setRecords(prev => prev.map(r => r.id === item.id ? updated : r))
+    setDetailNotesEditing(false)
+  }
+
+  async function handleBackfillNotes() {
+    setBackfillingNotes(true)
+    const BATCH = 50
+    const { data: missing } = await supabase
+      .from('collection')
+      .select('id, artist, album, notes_source')
+      .eq('username', username)
+      .or('notes_text.is.null,notes_text.eq.')
+      .neq('notes_source', 'manual')
+
+    if (!missing || missing.length === 0) {
+      showFlash('All albums already have notes')
+      setBackfillingNotes(false)
+      return
+    }
+
+    const batch = missing.slice(0, BATCH)
+    let found = 0
+
+    for (let i = 0; i < batch.length; i++) {
+      const item = batch[i]
+      setBackfillNotesProgress(`${i + 1} of ${batch.length}…`)
+      try {
+        const res = await fetch('/api/lookup-notes', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ artist: item.artist, album: item.album }),
+        })
+        const data = await res.json()
+        const updates: Record<string, unknown> = {}
+        if (data.notes_text) { updates.notes_text = data.notes_text; updates.notes_source = data.notes_source; found++ }
+        if (data.credits) updates.credits = data.credits
+        if (Object.keys(updates).length > 0) {
+          await supabase.from('collection').update(updates).eq('id', item.id)
+        }
+      } catch { /* continue */ }
+      if (i < batch.length - 1) await new Promise(r => setTimeout(r, 2000))
+    }
+
+    setBackfillingNotes(false)
+    setBackfillNotesProgress('')
+    const remaining = missing.length - batch.length
+    showFlash(`Found notes for ${found} of ${batch.length}${remaining > 0 ? ` — ${remaining} remaining, tap again to continue` : ''}`)
+    loadCollection()
   }
 
   /* ── Batch operations ── */
@@ -744,6 +835,9 @@ export default function CollectionTab({ username }: { username: string }) {
           <button onClick={handleBackfillCovers} disabled={backfilling || autoFilling} className="flex-1 sm:flex-none px-3 py-2 bg-surface2 text-accent border border-accent/40 rounded text-sm hover:bg-accent hover:text-cream transition-colors whitespace-nowrap shrink-0 disabled:opacity-50">
             {backfilling ? backfillProgress : 'Auto-fill Covers'}
           </button>
+          <button onClick={handleBackfillNotes} disabled={backfillingNotes} className="flex-1 sm:flex-none px-3 py-2 bg-surface2 text-cream-dim border border-border rounded text-sm hover:text-cream transition-colors whitespace-nowrap shrink-0 disabled:opacity-50">
+            {backfillingNotes ? `Notes ${backfillNotesProgress}` : 'Auto-fill Notes'}
+          </button>
         </div>
       </div>
 
@@ -885,19 +979,19 @@ export default function CollectionTab({ username }: { username: string }) {
             )}
             <h2 className="text-cream text-lg font-medium">{detailRecord.artist}</h2>
             <h3 className="text-cream-dim text-base italic">{detailRecord.album}</h3>
-            <div className="flex gap-2 mt-1 text-cream-dim text-sm">
+            <div className="flex gap-2 mt-1 text-cream-dim text-sm flex-wrap">
               {detailRecord.year && <span>{detailRecord.year}</span>}
               {detailRecord.year && detailRecord.genre && <span>·</span>}
               {detailRecord.genre && <span>{detailRecord.genre}</span>}
               {detailRecord.format && <span>· {detailRecord.format}</span>}
             </div>
-            {detailRecord.notes && <p className="text-cream-dim text-xs mt-2">{detailRecord.notes}</p>}
-            {detailRecord.cover_source && <p className="text-cream-dim text-[10px] mt-1 uppercase tracking-wider">Cover: {detailRecord.cover_source}</p>}
+            {detailRecord.notes && <p className="text-cream-dim text-xs mt-2 italic">{detailRecord.notes}</p>}
 
+            {/* Play history */}
             {detailSpins.length > 0 && (
               <div className="mt-4 pt-4 border-t border-border">
                 <h4 className="text-cream text-xs font-semibold uppercase tracking-widest mb-2">Plays ({detailSpins.length})</h4>
-                <div className="space-y-1 max-h-40 overflow-y-auto">
+                <div className="space-y-1 max-h-32 overflow-y-auto">
                   {detailSpins.map(s => (
                     <div key={s.id} className="text-cream-dim text-xs">{formatDate(s.date_played)}</div>
                   ))}
@@ -905,7 +999,101 @@ export default function CollectionTab({ username }: { username: string }) {
               </div>
             )}
 
-            <div className="flex gap-2 mt-5 flex-wrap">
+            {/* About this album */}
+            <div className="mt-4 pt-4 border-t border-border">
+              <div className="flex items-center justify-between mb-2">
+                <h4 className="text-cream text-xs font-semibold uppercase tracking-widest">About this album</h4>
+                <div className="flex gap-1.5">
+                  {!detailNotesEditing && (
+                    <button
+                      onClick={() => { setDetailNotesEditText(detailRecord.notes_text || ''); setDetailNotesEditing(true) }}
+                      className="text-[10px] text-cream-dim hover:text-cream transition-colors px-2 py-1 border border-border rounded uppercase tracking-wider"
+                    >
+                      {detailRecord.notes_text ? 'Edit' : 'Add'}
+                    </button>
+                  )}
+                  {!detailRecord.notes_text && !detailNotesEditing && (
+                    <button
+                      onClick={() => fetchAndCacheNotes(detailRecord)}
+                      disabled={detailNotesLoading}
+                      className="text-[10px] text-teal hover:text-cream transition-colors px-2 py-1 border border-teal/40 rounded uppercase tracking-wider disabled:opacity-50"
+                    >
+                      {detailNotesLoading ? 'Looking up…' : 'Look up'}
+                    </button>
+                  )}
+                  {detailRecord.notes_text && !detailNotesEditing && detailRecord.notes_source !== 'manual' && (
+                    <button
+                      onClick={() => fetchAndCacheNotes(detailRecord)}
+                      disabled={detailNotesLoading}
+                      className="text-[10px] text-cream-dim hover:text-cream transition-colors px-2 py-1 border border-border rounded uppercase tracking-wider disabled:opacity-50"
+                    >
+                      {detailNotesLoading ? '…' : '↻'}
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {detailNotesEditing ? (
+                <div>
+                  <textarea
+                    value={detailNotesEditText}
+                    onChange={e => setDetailNotesEditText(e.target.value)}
+                    rows={8}
+                    placeholder="Write your own notes about this album…"
+                    className="text-xs leading-relaxed"
+                  />
+                  <div className="flex gap-2 mt-2">
+                    <button
+                      onClick={() => saveManualNotes(detailRecord, detailNotesEditText)}
+                      className="px-3 py-1.5 bg-teal text-bg text-xs rounded font-medium hover:opacity-90"
+                    >
+                      Save
+                    </button>
+                    <button
+                      onClick={() => setDetailNotesEditing(false)}
+                      className="px-3 py-1.5 bg-surface2 text-cream-dim border border-border text-xs rounded hover:text-cream transition-colors"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              ) : detailNotesLoading ? (
+                <p className="text-cream-dim text-xs italic">Looking up album info…</p>
+              ) : detailRecord.notes_text ? (
+                <div>
+                  <p className="text-cream-dim text-xs leading-relaxed whitespace-pre-wrap max-h-60 overflow-y-auto pr-1">
+                    {detailRecord.notes_text}
+                  </p>
+                  <p className="text-cream-dim text-[10px] mt-2 uppercase tracking-wider opacity-50">
+                    {detailRecord.notes_source === 'wikipedia' ? 'Wikipedia (CC BY-SA)' :
+                     detailRecord.notes_source === 'lastfm' ? 'Last.fm' :
+                     detailRecord.notes_source === 'discogs' ? 'Discogs' :
+                     detailRecord.notes_source === 'manual' ? 'Your notes' : ''}
+                  </p>
+                </div>
+              ) : (
+                <p className="text-cream-dim text-xs italic opacity-60">No info found. Try &ldquo;Look up&rdquo; or write your own.</p>
+              )}
+
+              {/* Credits */}
+              {detailRecord.credits && !detailNotesEditing && (
+                <div className="mt-3">
+                  <button
+                    onClick={() => setDetailShowCredits(v => !v)}
+                    className="text-[10px] text-cream-dim hover:text-cream transition-colors uppercase tracking-wider border border-border rounded px-2 py-1"
+                  >
+                    {detailShowCredits ? 'Hide Credits' : 'Show Credits'}
+                  </button>
+                  {detailShowCredits && (
+                    <pre className="mt-2 text-cream-dim text-[11px] leading-relaxed whitespace-pre-wrap bg-[rgba(232,220,200,0.03)] border border-[rgba(232,220,200,0.08)] rounded p-3 max-h-40 overflow-y-auto font-sans">
+                      {detailRecord.credits}
+                    </pre>
+                  )}
+                </div>
+              )}
+            </div>
+
+            <div className="flex gap-2 mt-5 flex-wrap pt-4 border-t border-border">
               <button onClick={() => { handleSpinIt(detailRecord); setDetailRecord(null) }} className="px-3 py-2 text-xs text-teal border border-teal/50 rounded hover:bg-teal hover:text-bg transition-colors">Spin It</button>
               <button onClick={() => { setDetailRecord(null); openEdit(detailRecord) }} className="px-3 py-2 text-xs text-cream-dim border border-border rounded hover:text-cream transition-colors">Edit</button>
               <button onClick={() => { handleRefreshCover(detailRecord) }} className="px-3 py-2 text-xs text-cream-dim border border-border rounded hover:text-cream transition-colors">↻ Cover</button>

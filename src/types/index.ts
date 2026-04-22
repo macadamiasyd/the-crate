@@ -15,6 +15,8 @@ export interface Spin {
   created_at: string
 }
 
+export type NotesSource = 'wikipedia' | 'lastfm' | 'discogs' | 'manual' | null
+
 export interface Collection {
   id: string
   username: string
@@ -27,6 +29,9 @@ export interface Collection {
   cover_source: CoverSource
   mbid: string | null
   notes: string | null
+  notes_text: string | null
+  notes_source: NotesSource
+  credits: string | null
   created_at: string
 }
 
