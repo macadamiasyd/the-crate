@@ -33,7 +33,9 @@ export default function UserPicker({ onSelect }: { onSelect: (name: string) => v
     e.preventDefault()
     const name = newName.trim()
     if (!name) return
-    onSelect(name)
+    // Case-insensitive match against existing users to avoid duplicate users with different casing
+    const existing = users.find(u => u.toLowerCase() === name.toLowerCase())
+    onSelect(existing ?? name)
   }
 
   return (

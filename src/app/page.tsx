@@ -36,7 +36,24 @@ export default function Home() {
   const [importLoading, setImportLoading] = useState(false)
 
   useEffect(() => {
-    setUsername(getStoredUser())
+    const stored = getStoredUser()
+    if (!stored) { setUsername(null); return }
+
+    // Set immediately so the app renders without flash
+    setUsername(stored)
+
+    // Background: normalise casing against DB in case it was typed differently on another device
+    void (async () => {
+      for (const table of ['spins', 'collection', 'wishlist']) {
+        const { data } = await supabase.from(table).select('username').ilike('username', stored).limit(1) as { data: { username: string }[] | null }
+        const canonical = data?.[0]?.username
+        if (canonical && canonical !== stored) {
+          setStoredUser(canonical)
+          setUsername(canonical)
+          return
+        }
+      }
+    })()
   }, [])
 
   function handleSelectUser(name: string) {
