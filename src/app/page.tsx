@@ -8,9 +8,10 @@ import WishlistTab from '@/components/WishlistTab'
 import AskTab from '@/components/AskTab'
 import StatsTab from '@/components/StatsTab'
 import VisualiserTab from '@/components/VisualiserTab'
+import SettingsTab from '@/components/SettingsTab'
 import UserPicker from '@/components/UserPicker'
 
-type Tab = 'log' | 'collection' | 'wishlist' | 'ask' | 'stats' | 'visualise'
+type Tab = 'log' | 'collection' | 'wishlist' | 'ask' | 'stats' | 'visualise' | 'settings'
 
 const TABS: { id: Tab; label: string }[] = [
   { id: 'log', label: 'Log' },
@@ -19,6 +20,7 @@ const TABS: { id: Tab; label: string }[] = [
   { id: 'ask', label: 'Ask' },
   { id: 'stats', label: 'Stats' },
   { id: 'visualise', label: 'Visualise' },
+  { id: 'settings', label: 'Settings' },
 ]
 
 function getStoredUser(): string | null {
@@ -190,6 +192,7 @@ export default function Home() {
         {activeTab === 'ask' && <AskTab username={username} />}
         {activeTab === 'stats' && <StatsTab username={username} />}
         {activeTab === 'visualise' && <VisualiserTab username={username} />}
+        {activeTab === 'settings' && <SettingsTab username={username} />}
       </main>
     </div>
   )
