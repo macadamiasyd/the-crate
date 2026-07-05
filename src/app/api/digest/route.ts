@@ -10,7 +10,7 @@ const anthropic = new Anthropic()
 export async function GET(req: NextRequest) {
   // Auth check
   const auth = req.headers.get('Authorization')
-  if (auth !== `Bearer ${process.env.CRON_SECRET}`) {
+  if (!process.env.CRON_SECRET || auth !== `Bearer ${process.env.CRON_SECRET}`) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
@@ -92,12 +92,14 @@ export async function GET(req: NextRequest) {
   const headStyle = 'font-size:18px;font-weight:700;color:#1a1a1a;margin:0 0 16px;'
   const dimStyle = 'font-size:13px;color:#666;'
 
+  const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
+
   const albumRow = (artist: string, album: string, cover?: string | null) => `
     <div style="${rowStyle}">
       ${cover ? `<img src="${cover}" alt="" style="${thumbStyle}" />` : `<div style="${thumbStyle}background:#eee;"></div>`}
       <div>
-        <div style="font-size:14px;color:#1a1a1a;">${album}</div>
-        <div style="${dimStyle}">${artist}</div>
+        <div style="font-size:14px;color:#1a1a1a;">${esc(album)}</div>
+        <div style="${dimStyle}">${esc(artist)}</div>
       </div>
     </div>`
 
@@ -123,11 +125,11 @@ export async function GET(req: NextRequest) {
   <table style="border-collapse:collapse;font-size:14px;margin-bottom:24px;">
     <tr><td style="padding:4px 16px 4px 0;color:#888;">Plays this week</td><td style="font-weight:600;">${stats.spinsThisWeek}</td></tr>
     <tr><td style="padding:4px 16px 4px 0;color:#888;">Plays this month</td><td style="font-weight:600;">${stats.spinsThisMonth}</td></tr>
-    <tr><td style="padding:4px 16px 4px 0;color:#888;">Top artist (30 days)</td><td style="font-weight:600;">${stats.topArtistName} &nbsp;<span style="color:#888;font-weight:400;">${stats.topArtistPlays}×</span></td></tr>
+    <tr><td style="padding:4px 16px 4px 0;color:#888;">Top artist (30 days)</td><td style="font-weight:600;">${esc(stats.topArtistName)} &nbsp;<span style="color:#888;font-weight:400;">${stats.topArtistPlays}×</span></td></tr>
   </table>
 
   <h2 style="${headStyle}">Rotation Note</h2>
-  <p style="font-size:15px;line-height:1.6;color:#333;">${rotationNote}</p>
+  <p style="font-size:15px;line-height:1.6;color:#333;">${esc(rotationNote)}</p>
 
   <hr style="border:none;border-top:1px solid #eee;margin:32px 0;">
   <p style="font-size:11px;color:#aaa;">The Crate · automated weekly digest</p>
