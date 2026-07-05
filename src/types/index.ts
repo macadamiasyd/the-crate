@@ -33,6 +33,16 @@ export interface Collection {
   notes_source: NotesSource
   credits: string | null
   created_at: string
+  // Discogs enrichment
+  discogs_release_id: number | null
+  discogs_instance_id: number | null
+  label: string | null
+  catno: string | null
+  styles: string[] | null
+  lowest_price: number | null
+  num_for_sale: number | null
+  value_updated_at: string | null
+  discogs_synced_at: string | null
 }
 
 export type Wishlist = Collection
@@ -45,4 +55,14 @@ export interface CoverSearchResult {
   artist?: string
   year?: string
   format?: string
+}
+
+export interface DiscogsSearchResult {
+  id: number
+  artist: string
+  title: string
+  year: string | null
+  label: string | null
+  catno: string | null
+  cover_url: string | null
 }
