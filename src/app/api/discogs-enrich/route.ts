@@ -5,6 +5,8 @@ import { searchRelease } from '@/lib/discogs'
 import { namesMatch } from '@/lib/normalise'
 import type { Collection } from '@/types'
 
+export const maxDuration = 300 // 5-minute max for throttled Discogs batch
+
 export async function POST(req: NextRequest) {
   const { username } = await req.json() as { username: string }
   if (!username) return NextResponse.json({ error: 'username required' }, { status: 400 })
@@ -44,9 +46,9 @@ export async function POST(req: NextRequest) {
         discogs_release_id: match.releaseId,
         label: match.label,
         catno: match.catno,
-        styles: match.styles.length ? match.styles : undefined,
         discogs_synced_at: new Date().toISOString(),
       }
+      if (match.styles.length) updates.styles = match.styles
       // Only set cover_url if we don't already have one
       if (!row.cover_url && match.coverUrl) {
         updates.cover_url = match.coverUrl
@@ -56,10 +58,11 @@ export async function POST(req: NextRequest) {
         updates.year = parseInt(match.year)
       }
 
-      await supabaseAdmin
+      const { error: updateError } = await supabaseAdmin
         .from('collection')
         .update(updates)
         .eq('id', row.id)
+      if (updateError) throw updateError
 
       updated++
     } catch (err) {
