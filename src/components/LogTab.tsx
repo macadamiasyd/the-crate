@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { supabase } from '@/lib/supabase'
 import { proxyCoverUrl } from '@/lib/cover'
 import type { Spin } from '@/types'
@@ -51,7 +51,33 @@ function formatDate(dateStr: string) {
   })
 }
 
+async function resizeToBase64(file: File, maxEdge = 1024, quality = 0.8): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const img = new Image()
+    const url = URL.createObjectURL(file)
+    img.onload = () => {
+      URL.revokeObjectURL(url)
+      const scale = Math.min(1, maxEdge / Math.max(img.width, img.height))
+      const w = Math.round(img.width * scale)
+      const h = Math.round(img.height * scale)
+      const canvas = document.createElement('canvas')
+      canvas.width = w
+      canvas.height = h
+      canvas.getContext('2d')!.drawImage(img, 0, 0, w, h)
+      resolve(canvas.toDataURL('image/jpeg', quality))
+    }
+    img.onerror = reject
+    img.src = url
+  })
+}
+
 type Flash = { text: string; ok: boolean }
+
+type SnapState =
+  | null
+  | { status: 'capturing' }
+  | { status: 'loading' }
+  | { status: 'confirm'; artist: string; album: string; year: number | null; genre: string | null; cover_url: string | null; format: string | null; confidence: string }
 
 export default function LogTab({ username }: { username: string }) {
   const today = new Date().toISOString().split('T')[0]
@@ -64,6 +90,8 @@ export default function LogTab({ username }: { username: string }) {
   const [bulkText, setBulkText] = useState('')
   const [bulkImporting, setBulkImporting] = useState(false)
   const [flash, setFlash] = useState<Flash | null>(null)
+  const [snap, setSnap] = useState<SnapState>(null)
+  const snapInputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => { loadSpins() }, [username])
 
@@ -196,6 +224,74 @@ export default function LogTab({ username }: { username: string }) {
     setBulkImporting(false)
   }
 
+  async function handleSnapFile(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    if (!file) return
+    e.target.value = ''
+    setSnap({ status: 'loading' })
+    try {
+      const base64 = await resizeToBase64(file)
+      const res = await fetch('/api/identify', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ image: base64, username }),
+      })
+      const data = await res.json()
+      if (data.confidence === 'low' || !data.artist) {
+        setForm(f => ({
+          ...f,
+          artist: data.artist || '',
+          album: data.album || '',
+          year: data.year ? String(data.year) : '',
+          genre: data.genre || '',
+          format: data.format || '',
+        }))
+        setSnap(null)
+        showFlash('Low confidence — please check and correct', false)
+      } else {
+        setSnap({
+          status: 'confirm',
+          artist: data.artist,
+          album: data.album,
+          year: data.year,
+          genre: data.genre,
+          cover_url: data.cover_url,
+          format: data.format,
+          confidence: data.confidence,
+        })
+      }
+    } catch {
+      setSnap(null)
+      showFlash('Photo ID failed', false)
+    }
+  }
+
+  async function confirmSnap() {
+    if (snap?.status !== 'confirm') return
+    const { artist, album, year, genre, cover_url, format } = snap
+    setSnap(null)
+    setSubmitting(true)
+    const spin = {
+      username,
+      artist,
+      album,
+      genre: genre || null,
+      year: year ?? null,
+      format: format || null,
+      date_played: today,
+    }
+    const { error } = await supabase.from('spins').insert(spin)
+    if (!error) {
+      await ensureInCollection(artist, album, genre, year, format, cover_url)
+      showFlash('Spin logged!')
+      loadSpins()
+      autoLookupMeta(artist, album)
+    } else {
+      showFlash('Failed to log spin', false)
+    }
+    setSubmitting(false)
+  }
+
   async function deleteSpin(id: string) {
     if (!confirm('Delete this spin?')) return
     await supabase.from('spins').delete().eq('id', id)
@@ -220,6 +316,73 @@ export default function LogTab({ username }: { username: string }) {
       {/* Log form */}
       <div className="bg-surface rounded-lg p-4 sm:p-5">
         <h2 className="text-cream text-xs font-semibold uppercase tracking-widest mb-4">Log a Spin</h2>
+
+        {/* Snap button */}
+        <div className="mb-4 flex gap-3 items-center">
+          <button
+            type="button"
+            onClick={() => snapInputRef.current?.click()}
+            disabled={snap?.status === 'loading'}
+            className="flex items-center gap-2 px-4 py-2 bg-surface2 text-cream border border-border rounded text-sm hover:border-teal hover:text-teal transition-colors disabled:opacity-50"
+          >
+            {snap?.status === 'loading' ? '📷 Identifying…' : '📷 Snap'}
+          </button>
+          <span className="text-cream-dim text-xs">or fill in manually below</span>
+          <input
+            ref={snapInputRef}
+            type="file"
+            accept="image/*"
+            capture="environment"
+            className="hidden"
+            onChange={handleSnapFile}
+          />
+        </div>
+
+        {/* Confirm card */}
+        {snap?.status === 'confirm' && (
+          <div className="mb-4 bg-surface2 border border-teal/30 rounded-lg p-4 flex gap-4 items-start">
+            {snap.cover_url && (
+              <img src={snap.cover_url} alt="" width={72} height={72} className="rounded shrink-0 object-cover" style={{ width: 72, height: 72 }} />
+            )}
+            <div className="flex-1 min-w-0">
+              <div className="text-cream font-medium">{snap.album}</div>
+              <div className="text-cream-dim text-sm">{snap.artist}{snap.year ? ` · ${snap.year}` : ''}</div>
+              {snap.genre && <div className="text-cream-dim text-xs mt-0.5 italic">{snap.genre}</div>}
+              <div className="flex gap-2 mt-3">
+                <button
+                  onClick={confirmSnap}
+                  disabled={submitting}
+                  className="px-3 py-1.5 bg-accent text-cream rounded text-sm font-medium hover:opacity-90 disabled:opacity-50"
+                >
+                  {submitting ? 'Logging…' : '✓ Log this spin'}
+                </button>
+                <button
+                  onClick={() => {
+                    if (snap.status === 'confirm') {
+                      setForm(f => ({
+                        ...f,
+                        artist: snap.artist,
+                        album: snap.album,
+                        year: snap.year ? String(snap.year) : '',
+                        genre: snap.genre || '',
+                        format: snap.format || '',
+                      }))
+                    }
+                    setSnap(null)
+                  }}
+                  className="px-3 py-1.5 bg-surface text-cream-dim border border-border rounded text-sm hover:text-cream"
+                >
+                  Edit
+                </button>
+                <button onClick={() => setSnap(null)} className="px-3 py-1.5 text-cream-dim text-sm hover:text-cream">
+                  Cancel
+                </button>
+              </div>
+            </div>
+            <div className="text-xs text-cream-dim shrink-0">{snap.confidence} conf.</div>
+          </div>
+        )}
+
         <form onSubmit={handleSubmit} className="space-y-3">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
