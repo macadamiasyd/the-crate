@@ -66,7 +66,10 @@ async function resizeToBase64(file: File, maxEdge = 1024, quality = 0.8): Promis
       canvas.getContext('2d')!.drawImage(img, 0, 0, w, h)
       resolve(canvas.toDataURL('image/jpeg', quality))
     }
-    img.onerror = reject
+    img.onerror = (err) => {
+      URL.revokeObjectURL(url)
+      reject(err)
+    }
     img.src = url
   })
 }
@@ -227,6 +230,7 @@ export default function LogTab({ username }: { username: string }) {
   async function handleSnapFile(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0]
     if (!file) return
+    if (snap?.status === 'loading') return   // re-entrancy guard
     e.target.value = ''
     setSnap({ status: 'loading' })
     try {
