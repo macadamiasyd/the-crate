@@ -13,12 +13,14 @@ export async function POST(req: NextRequest) {
   const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString()
 
   // Rows with a release ID that haven't been valued recently
-  const { data: rows } = await supabaseAdmin
+  const { data: rows, error: fetchError } = await supabaseAdmin
     .from('collection')
     .select('id, discogs_release_id, cover_url')
     .eq('username', username)
     .not('discogs_release_id', 'is', null)
-    .or(`value_updated_at.is.null,value_updated_at.lt.${sevenDaysAgo}`) as { data: Collection[] | null }
+    .or(`value_updated_at.is.null,value_updated_at.lt.${sevenDaysAgo}`) as { data: Collection[] | null; error: unknown }
+
+  if (fetchError) return NextResponse.json({ error: 'DB error' }, { status: 500 })
 
   if (!rows?.length) return NextResponse.json({ updated: 0, total: 0 })
 
