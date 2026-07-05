@@ -7,7 +7,7 @@ const anthropic = new Anthropic()
 
 const ALLOWED_TABLES = ['spins', 'collection', 'v_unplayed']
 
-function guardQuery(sql: string): string {
+function guardQuery(sql: string, username: string): string {
   const trimmed = sql.trim()
   if (!/^(select|with)\s/i.test(trimmed)) {
     throw new Error('Only SELECT and WITH queries are allowed')
@@ -23,6 +23,10 @@ function guardQuery(sql: string): string {
     if (!ALLOWED_TABLES.includes(t)) {
       throw new Error(`Table "${t}" is not in the allowlist (${ALLOWED_TABLES.join(', ')})`)
     }
+  }
+  // Ensure the query filters by username to prevent cross-user data access
+  if (!lc.includes(`username = '${username.toLowerCase()}'`) && !lc.includes(`username='${username.toLowerCase()}'`)) {
+    throw new Error('Query must include a username filter')
   }
   if (!/\blimit\s+\d+/i.test(withoutTrailing)) {
     return withoutTrailing + ' LIMIT 200'
@@ -52,6 +56,9 @@ export async function POST(req: NextRequest) {
     const { question, username } = await req.json()
     if (!question?.trim()) {
       return NextResponse.json({ error: 'Question is required' }, { status: 400 })
+    }
+    if (!username || !/^[a-z0-9_]+$/i.test(username)) {
+      return NextResponse.json({ error: 'Invalid username' }, { status: 400 })
     }
 
     const today = new Date().toISOString().split('T')[0]
@@ -96,7 +103,7 @@ Rules:
         if (block.type !== 'tool_use') continue
         let result: string
         try {
-          const safeSql = guardQuery((block.input as { sql: string }).sql)
+          const safeSql = guardQuery((block.input as { sql: string }).sql, username)
           const { data, error } = await supabaseAdmin.rpc('exec_sql', { query: safeSql })
           if (error) throw error
           result = JSON.stringify(data ?? []).slice(0, 8000)
