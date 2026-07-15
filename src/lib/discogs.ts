@@ -78,15 +78,23 @@ export interface DiscogsMatch {
  * Returns the top result only (caller must verify names match).
  */
 export async function searchRelease(artist: string, album: string): Promise<DiscogsMatch | null> {
-  const params = new URLSearchParams({
-    artist,
-    release_title: album,
-    format: 'Vinyl',
-    type: 'release',
-    per_page: '5',
-  })
+  const base = { artist, release_title: album, type: 'release', per_page: '5' }
 
-  const data = await discogsGet<DiscogsSearchResponse>(`/database/search?${params}`)
+  // Try Vinyl first; fall back to any format, then to a freetext q= query
+  let data = await discogsGet<DiscogsSearchResponse>(
+    `/database/search?${new URLSearchParams({ ...base, format: 'Vinyl' })}`
+  )
+  if (!data.results?.length) {
+    data = await discogsGet<DiscogsSearchResponse>(
+      `/database/search?${new URLSearchParams(base)}`
+    )
+  }
+  if (!data.results?.length) {
+    data = await discogsGet<DiscogsSearchResponse>(
+      `/database/search?${new URLSearchParams({ q: `${artist} ${album}`, type: 'release', per_page: '5' })}`
+    )
+  }
+
   if (!data.results?.length) return null
 
   const top = data.results[0]
