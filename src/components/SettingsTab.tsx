@@ -8,6 +8,7 @@ interface EnrichReport {
   skipped: number
   errors: number
   skippedList: string[]
+  remaining: number
 }
 
 interface ValuesReport {
@@ -26,17 +27,32 @@ export default function SettingsTab({ username }: { username: string }) {
 
   async function handleEnrich() {
     setEnriching(true)
-    setEnrichReport(null)
+    // Accumulate results across batches
+    setEnrichReport(prev => prev
+      ? { ...prev, remaining: 0 }
+      : null
+    )
     try {
       const res = await fetch('/api/discogs-enrich', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ username }),
       })
+      if (!res.ok) throw new Error(`${res.status}`)
       const data = await res.json()
-      setEnrichReport(data)
-    } catch {
-      setEnrichReport({ total: 0, updated: 0, skipped: 0, errors: 1, skippedList: ['Request failed'] })
+      setEnrichReport(prev => prev ? {
+        total: prev.total + data.total,
+        updated: prev.updated + data.updated,
+        skipped: prev.skipped + data.skipped,
+        errors: prev.errors + data.errors,
+        skippedList: [...prev.skippedList, ...data.skippedList],
+        remaining: data.remaining,
+      } : data)
+    } catch (e) {
+      setEnrichReport(prev => prev
+        ? { ...prev, errors: prev.errors + 1, remaining: 0 }
+        : { total: 0, updated: 0, skipped: 0, errors: 1, skippedList: ['Request failed'], remaining: 0 }
+      )
     }
     setEnriching(false)
   }
@@ -90,12 +106,19 @@ export default function SettingsTab({ username }: { username: string }) {
             disabled={enriching}
             className="px-4 py-2 bg-surface2 text-cream border border-border rounded text-sm hover:border-teal hover:text-teal transition-colors disabled:opacity-50"
           >
-            {enriching ? 'Enriching… (this takes a while)' : 'Enrich from Discogs'}
+            {enriching
+              ? 'Enriching… (this takes a while)'
+              : enrichReport && enrichReport.remaining > 0
+                ? `Continue enriching (${enrichReport.remaining} remaining)`
+                : 'Enrich from Discogs'}
           </button>
 
           {enrichReport && (
             <div className="text-sm space-y-1 border-t border-border pt-3">
-              <div className="text-cream">{enrichReport.updated} updated · {enrichReport.skipped} skipped · {enrichReport.errors} errors (of {enrichReport.total} without Discogs data)</div>
+              <div className="text-cream">
+                {enrichReport.updated} updated · {enrichReport.skipped} skipped · {enrichReport.errors} errors (of {enrichReport.total} processed)
+                {enrichReport.remaining > 0 && <span className="text-cream-dim"> · {enrichReport.remaining} still queued</span>}
+              </div>
               {enrichReport.skippedList.length > 0 && (
                 <details className="mt-2">
                   <summary className="text-cream-dim cursor-pointer text-xs">Skipped records ({enrichReport.skippedList.length})</summary>

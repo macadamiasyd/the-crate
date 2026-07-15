@@ -11,15 +11,29 @@ export async function POST(req: NextRequest) {
   const { username } = await req.json() as { username: string }
   if (!username) return NextResponse.json({ error: 'username required' }, { status: 400 })
 
-  // Fetch collection rows missing discogs_release_id
+  const BATCH = 100
+
+  // Count total unmatched so we can return remaining
+  const { count, error: countError } = await supabaseAdmin
+    .from('collection')
+    .select('*', { count: 'exact', head: true })
+    .eq('username', username)
+    .is('discogs_release_id', null)
+  if (countError) return NextResponse.json({ error: 'DB error' }, { status: 500 })
+
+  const total = count ?? 0
+  if (total === 0) return NextResponse.json({ updated: 0, skipped: 0, errors: 0, skippedList: [], total: 0, remaining: 0 })
+
+  // Fetch one batch
   const { data: rows, error } = await supabaseAdmin
     .from('collection')
     .select('id, artist, album, cover_url, genre, year')
     .eq('username', username)
-    .is('discogs_release_id', null) as { data: Collection[] | null; error: unknown }
+    .is('discogs_release_id', null)
+    .limit(BATCH) as { data: Collection[] | null; error: unknown }
 
   if (error) return NextResponse.json({ error: 'DB error' }, { status: 500 })
-  if (!rows?.length) return NextResponse.json({ updated: 0, skipped: 0, errors: 0, skippedList: [] })
+  if (!rows?.length) return NextResponse.json({ updated: 0, skipped: 0, errors: 0, skippedList: [], total, remaining: 0 })
 
   let updated = 0
   let skipped = 0
@@ -71,5 +85,6 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  return NextResponse.json({ updated, skipped, errors, skippedList, total: rows.length })
+  const remaining = Math.max(0, total - rows.length)
+  return NextResponse.json({ updated, skipped, errors, skippedList, total: rows.length, remaining })
 }
