@@ -39,8 +39,12 @@ export async function POST(req: NextRequest) {
   let skipped = 0
   let errors = 0
   const skippedList: string[] = []
+  const deadline = Date.now() + 240_000 // stop at 4 min, leave 60s buffer
+  let processed = 0
 
   for (const row of rows) {
+    if (Date.now() > deadline) break
+    processed++
     try {
       const match = await searchRelease(row.artist, row.album)
       if (!match) {
@@ -85,6 +89,6 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  const remaining = Math.max(0, total - rows.length)
-  return NextResponse.json({ updated, skipped, errors, skippedList, total: rows.length, remaining })
+  const remaining = Math.max(0, total - processed)
+  return NextResponse.json({ updated, skipped, errors, skippedList, total: processed, remaining })
 }

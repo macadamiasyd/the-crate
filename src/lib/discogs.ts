@@ -24,7 +24,7 @@ async function discogsGet<T>(path: string, retries = 3): Promise<T> {
   })
 
   if (res.status === 429 && retries > 0) {
-    const retryAfter = parseInt(res.headers.get('Retry-After') ?? '5', 10)
+    const retryAfter = Math.min(parseInt(res.headers.get('Retry-After') ?? '5', 10), 10)
     await new Promise(r => setTimeout(r, (retryAfter + 1) * 1000))
     return discogsGet<T>(path, retries - 1)
   }
