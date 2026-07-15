@@ -27,12 +27,12 @@ export function normalise(s: string): string {
 function deepNormalise(s: string): string {
   return s
     .normalize('NFD')
-    .replace(/[̀-ͯ]/g, '')        // ö→o, é→e, ü→u, etc.
+    .replace(/[\u0300-\u036f]/g, '')  // ö→o, é→e, ü→u, etc.
     .replace(/\s*\*\s*/g, ' ')             // Kinks* → Kinks
     .replace(/\s*\(\d+\)\s*/g, ' ')        // America (2) → America
     .replace(/\s+\/\s+.+$/, '')            // Title / Other Title → Title (split releases)
     .replace(/\s*\([^)]{0,60}\)\s*$/, '')  // strip trailing (Subtitle Text)
-    .replace(/[-–—]/g, ' ')      // hyphens/en-dash/em-dash → space
+    .replace(/[-\u2013\u2014]/g, ' ')      // hyphens/en-dash/em-dash → space
     .replace(/\s+&\s+/g, ' and ')          // " & " → " and "
     .toLowerCase()
     .replace(/[^a-z0-9\s]/g, '')           // strip remaining punctuation
