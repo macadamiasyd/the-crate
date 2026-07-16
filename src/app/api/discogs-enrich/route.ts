@@ -5,6 +5,22 @@ import { searchRelease } from '@/lib/discogs'
 import { namesMatch } from '@/lib/normalise'
 import type { Collection } from '@/types'
 
+export interface PendingUpdate {
+  discogs_release_id: number
+  label: string | null
+  catno: string | null
+  styles?: string[]
+  cover_url?: string
+  year?: number
+}
+
+export interface SkippedRecord {
+  id: string
+  text: string           // "Artist — Album"
+  discogsLabel?: string  // "Discogs Artist — Discogs Title" (absent for no-results)
+  pending: PendingUpdate | null
+}
+
 export const maxDuration = 300 // 5-minute max for throttled Discogs batch
 
 export async function POST(req: NextRequest) {
@@ -38,7 +54,7 @@ export async function POST(req: NextRequest) {
   let updated = 0
   let skipped = 0
   let errors = 0
-  const skippedList: string[] = []
+  const skippedList: SkippedRecord[] = []
   const deadline = Date.now() + 240_000 // stop at 4 min, leave 60s buffer
   let processed = 0
 
@@ -49,14 +65,27 @@ export async function POST(req: NextRequest) {
       const match = await searchRelease(row.artist, row.album)
       if (!match) {
         skipped++
-        skippedList.push(`${row.artist} — ${row.album} (no results)`)
+        skippedList.push({ id: row.id, text: `${row.artist} — ${row.album} (no results)`, pending: null })
         continue
       }
 
       // Verify names match to avoid false positives
       if (!namesMatch(row.artist, match.artist) || !namesMatch(row.album, match.title)) {
         skipped++
-        skippedList.push(`${row.artist} — ${row.album} (top result was "${match.artist} — ${match.title}")`)
+        const pending: PendingUpdate = {
+          discogs_release_id: match.releaseId,
+          label: match.label,
+          catno: match.catno,
+          ...(match.styles.length ? { styles: match.styles } : {}),
+          ...(!row.cover_url && match.coverUrl ? { cover_url: match.coverUrl } : {}),
+          ...(!row.year && match.year ? { year: parseInt(match.year) } : {}),
+        }
+        skippedList.push({
+          id: row.id,
+          text: `${row.artist} — ${row.album}`,
+          discogsLabel: `${match.artist} — ${match.title}`,
+          pending,
+        })
         continue
       }
 
@@ -67,14 +96,8 @@ export async function POST(req: NextRequest) {
         discogs_synced_at: new Date().toISOString(),
       }
       if (match.styles.length) updates.styles = match.styles
-      // Only set cover_url if we don't already have one
-      if (!row.cover_url && match.coverUrl) {
-        updates.cover_url = match.coverUrl
-      }
-      // Only set year if we don't already have one
-      if (!row.year && match.year) {
-        updates.year = parseInt(match.year)
-      }
+      if (!row.cover_url && match.coverUrl) updates.cover_url = match.coverUrl
+      if (!row.year && match.year) updates.year = parseInt(match.year)
 
       const { error: updateError } = await supabaseAdmin
         .from('collection')

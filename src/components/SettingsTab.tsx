@@ -1,13 +1,14 @@
 'use client'
 
 import { useState } from 'react'
+import type { SkippedRecord } from '@/app/api/discogs-enrich/route'
 
 interface EnrichReport {
   total: number
   updated: number
   skipped: number
   errors: number
-  skippedList: string[]
+  skippedList: SkippedRecord[]
   remaining: number
 }
 
@@ -20,18 +21,19 @@ interface ValuesReport {
 export default function SettingsTab({ username }: { username: string }) {
   const [enriching, setEnriching] = useState(false)
   const [enrichReport, setEnrichReport] = useState<EnrichReport | null>(null)
+  const [selected, setSelected] = useState<Set<string>>(new Set())
+  const [applying, setApplying] = useState(false)
+  const [applyResult, setApplyResult] = useState<string | null>(null)
+
   const [refreshingValues, setRefreshingValues] = useState(false)
   const [valuesReport, setValuesReport] = useState<ValuesReport | null>(null)
+
   const [sendingDigest, setSendingDigest] = useState(false)
   const [digestResult, setDigestResult] = useState<string | null>(null)
 
   async function handleEnrich() {
     setEnriching(true)
-    // Accumulate results across batches
-    setEnrichReport(prev => prev
-      ? { ...prev, remaining: 0 }
-      : null
-    )
+    setApplyResult(null)
     try {
       const res = await fetch('/api/discogs-enrich', {
         method: 'POST',
@@ -39,7 +41,7 @@ export default function SettingsTab({ username }: { username: string }) {
         body: JSON.stringify({ username }),
       })
       if (!res.ok) throw new Error(`${res.status}`)
-      const data = await res.json()
+      const data: EnrichReport = await res.json()
       setEnrichReport(prev => prev ? {
         total: prev.total + data.total,
         updated: prev.updated + data.updated,
@@ -48,13 +50,57 @@ export default function SettingsTab({ username }: { username: string }) {
         skippedList: [...prev.skippedList, ...data.skippedList],
         remaining: data.remaining,
       } : data)
-    } catch (e) {
+    } catch {
       setEnrichReport(prev => prev
         ? { ...prev, errors: prev.errors + 1, remaining: 0 }
-        : { total: 0, updated: 0, skipped: 0, errors: 1, skippedList: ['Request failed'], remaining: 0 }
+        : { total: 0, updated: 0, skipped: 0, errors: 1, skippedList: [], remaining: 0 }
       )
     }
     setEnriching(false)
+  }
+
+  function toggleSelect(id: string) {
+    setSelected(prev => {
+      const next = new Set(prev)
+      next.has(id) ? next.delete(id) : next.add(id)
+      return next
+    })
+  }
+
+  function selectAll() {
+    const matchable = (enrichReport?.skippedList ?? []).filter(r => r.pending)
+    setSelected(new Set(matchable.map(r => r.id)))
+  }
+
+  async function handleApply() {
+    if (!enrichReport || selected.size === 0) return
+    setApplying(true)
+    setApplyResult(null)
+    const items = enrichReport.skippedList
+      .filter(r => r.pending && selected.has(r.id))
+      .map(r => ({ id: r.id, pending: r.pending! }))
+    try {
+      const res = await fetch('/api/discogs-apply', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username, items }),
+      })
+      if (!res.ok) throw new Error(`${res.status}`)
+      const { applied, errors } = await res.json()
+      setApplyResult(`Applied ${applied} record${applied !== 1 ? 's' : ''}${errors ? ` (${errors} errors)` : ''}`)
+      // Remove applied items from the skipped list
+      const appliedIds = new Set(items.map(i => i.id))
+      setEnrichReport(prev => prev ? {
+        ...prev,
+        updated: prev.updated + applied,
+        skipped: prev.skipped - applied,
+        skippedList: prev.skippedList.filter(r => !appliedIds.has(r.id)),
+      } : prev)
+      setSelected(new Set())
+    } catch {
+      setApplyResult('Apply failed — try again')
+    }
+    setApplying(false)
   }
 
   async function handleRefreshValues() {
@@ -90,6 +136,9 @@ export default function SettingsTab({ username }: { username: string }) {
     setSendingDigest(false)
   }
 
+  const matchable = (enrichReport?.skippedList ?? []).filter(r => r.pending)
+  const noResults = (enrichReport?.skippedList ?? []).filter(r => !r.pending)
+
   return (
     <div className="space-y-8 max-w-xl">
 
@@ -99,7 +148,7 @@ export default function SettingsTab({ username }: { username: string }) {
         <div className="bg-surface rounded-lg p-4 sm:p-5 space-y-4">
           <p className="text-cream-dim text-sm">
             Searches Discogs for collection records missing cover art, label, and catalogue number.
-            Matched records get enriched; ambiguous results are skipped and listed below.
+            Matched records get enriched; ambiguous results are listed below for you to review.
           </p>
           <button
             onClick={handleEnrich}
@@ -114,16 +163,54 @@ export default function SettingsTab({ username }: { username: string }) {
           </button>
 
           {enrichReport && (
-            <div className="text-sm space-y-1 border-t border-border pt-3">
-              <div className="text-cream">
+            <div className="space-y-3 border-t border-border pt-3">
+              <div className="text-sm text-cream">
                 {enrichReport.updated} updated · {enrichReport.skipped} skipped · {enrichReport.errors} errors (of {enrichReport.total} processed)
                 {enrichReport.remaining > 0 && <span className="text-cream-dim"> · {enrichReport.remaining} still queued</span>}
               </div>
-              {enrichReport.skippedList.length > 0 && (
-                <details className="mt-2">
-                  <summary className="text-cream-dim cursor-pointer text-xs">Skipped records ({enrichReport.skippedList.length})</summary>
+
+              {/* Records with a Discogs suggestion to review */}
+              {matchable.length > 0 && (
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-cream-dim text-xs">Suggested matches — tick to accept ({selected.size} selected)</span>
+                    <button onClick={selectAll} className="text-xs text-teal hover:underline">Select all</button>
+                  </div>
+                  <ul className="space-y-1 max-h-64 overflow-y-auto">
+                    {matchable.map(r => (
+                      <li key={r.id} className="flex items-start gap-2 text-xs">
+                        <input
+                          type="checkbox"
+                          checked={selected.has(r.id)}
+                          onChange={() => toggleSelect(r.id)}
+                          className="mt-0.5 accent-teal shrink-0"
+                        />
+                        <span className="text-cream-dim">
+                          <span className="text-cream">{r.text}</span>
+                          {r.discogsLabel && <> → <span className="text-cream-dim">{r.discogsLabel}</span></>}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                  <div className="flex items-center gap-3">
+                    <button
+                      onClick={handleApply}
+                      disabled={applying || selected.size === 0}
+                      className="px-3 py-1.5 bg-teal text-bg text-xs font-medium rounded hover:opacity-90 transition-opacity disabled:opacity-40"
+                    >
+                      {applying ? 'Applying…' : `Apply ${selected.size > 0 ? selected.size : ''} selected`}
+                    </button>
+                    {applyResult && <span className="text-xs text-cream-dim">{applyResult}</span>}
+                  </div>
+                </div>
+              )}
+
+              {/* No-results records */}
+              {noResults.length > 0 && (
+                <details className="mt-1">
+                  <summary className="text-cream-dim cursor-pointer text-xs">No Discogs match ({noResults.length})</summary>
                   <ul className="mt-2 space-y-1 text-xs text-cream-dim">
-                    {enrichReport.skippedList.map((s, i) => <li key={i}>{s}</li>)}
+                    {noResults.map(r => <li key={r.id}>{r.text}</li>)}
                   </ul>
                 </details>
               )}
