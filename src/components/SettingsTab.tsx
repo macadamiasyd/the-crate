@@ -16,6 +16,7 @@ interface ValuesReport {
   total: number
   updated: number
   errors: number
+  remaining: number
 }
 
 export default function SettingsTab({ username }: { username: string }) {
@@ -105,17 +106,25 @@ export default function SettingsTab({ username }: { username: string }) {
 
   async function handleRefreshValues() {
     setRefreshingValues(true)
-    setValuesReport(null)
     try {
       const res = await fetch('/api/discogs-values', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ username }),
       })
-      const data = await res.json()
-      setValuesReport(data)
+      if (!res.ok) throw new Error(`${res.status}`)
+      const data: ValuesReport = await res.json()
+      setValuesReport(prev => prev ? {
+        total: prev.total + data.total,
+        updated: prev.updated + data.updated,
+        errors: prev.errors + data.errors,
+        remaining: data.remaining,
+      } : data)
     } catch {
-      setValuesReport({ total: 0, updated: 0, errors: 1 })
+      setValuesReport(prev => prev
+        ? { ...prev, errors: prev.errors + 1, remaining: 0 }
+        : { total: 0, updated: 0, errors: 1, remaining: 0 }
+      )
     }
     setRefreshingValues(false)
   }
@@ -226,11 +235,16 @@ export default function SettingsTab({ username }: { username: string }) {
               disabled={refreshingValues}
               className="px-4 py-2 bg-surface2 text-cream-dim border border-border rounded text-sm hover:border-teal hover:text-teal transition-colors disabled:opacity-50"
             >
-              {refreshingValues ? 'Refreshing values…' : 'Refresh Values'}
+              {refreshingValues
+                ? 'Refreshing values…'
+                : valuesReport && valuesReport.remaining > 0
+                  ? `Continue refreshing (${valuesReport.remaining} remaining)`
+                  : 'Refresh Values'}
             </button>
             {valuesReport && (
               <div className="mt-2 text-sm text-cream-dim">
-                {valuesReport.updated} updated · {valuesReport.errors} errors (of {valuesReport.total})
+                {valuesReport.updated} updated · {valuesReport.errors} errors (of {valuesReport.total} processed)
+                {valuesReport.remaining > 0 && <span> · {valuesReport.remaining} still queued</span>}
               </div>
             )}
           </div>
