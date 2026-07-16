@@ -13,7 +13,16 @@ body {
   min-height: 100vh;
 }
 
-input,
+input[type='checkbox'],
+input[type='radio'] {
+  width: auto;
+  padding: 0;
+  border: none;
+  border-radius: 0;
+  background-color: transparent;
+}
+
+input:not([type='checkbox']):not([type='radio']),
 textarea,
 select {
   background-color: #141414;
@@ -28,13 +37,13 @@ select {
   transition: border-color 0.15s;
 }
 
-input:focus,
+input:not([type='checkbox']):not([type='radio']):focus,
 textarea:focus,
 select:focus {
   border-color: #6ba89a;
 }
 
-input::placeholder,
+input:not([type='checkbox']):not([type='radio'])::placeholder,
 textarea::placeholder {
   color: #a09585;
 }
