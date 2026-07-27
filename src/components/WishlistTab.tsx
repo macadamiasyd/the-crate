@@ -158,7 +158,7 @@ export default function WishlistTab({ username }: { username: string }) {
       .maybeSingle()
 
     if (!existing) {
-      const { error } = await supabase.from('collection').insert({
+      const { data: created, error } = await supabase.from('collection').insert({
         username,
         artist: record.artist,
         album: record.album,
@@ -168,8 +168,15 @@ export default function WishlistTab({ username }: { username: string }) {
         cover_url: record.cover_url,
         mbid: record.mbid,
         notes: record.notes,
-      })
+      }).select('id').single()
       if (error) { showFlash('Failed to add to collection', false); return }
+      if (created) {
+        fetch('/api/discogs-enrich-one', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ username, id: created.id }),
+        }).catch(() => { /* silent */ })
+      }
     }
 
     await supabase.from('wishlist').delete().eq('id', record.id)

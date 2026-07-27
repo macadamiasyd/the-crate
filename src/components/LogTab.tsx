@@ -124,7 +124,18 @@ export default function LogTab({ username }: { username: string }) {
       .ilike('album', album)
       .maybeSingle()
     if (!data) {
-      await supabase.from('collection').insert({ username, artist, album, genre, year, format, cover_url, mbid })
+      const { data: created } = await supabase
+        .from('collection')
+        .insert({ username, artist, album, genre, year, format, cover_url, mbid })
+        .select('id')
+        .single()
+      if (created) {
+        fetch('/api/discogs-enrich-one', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ username, id: created.id }),
+        }).catch(() => { /* silent */ })
+      }
     }
   }
 

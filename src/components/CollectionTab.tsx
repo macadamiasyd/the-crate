@@ -417,9 +417,14 @@ export default function CollectionTab({ username }: { username: string }) {
       if (Object.keys(updates).length > 0) {
         await supabase.from('collection').update(updates).eq('id', id)
         await supabase.from('spins').update(updates).eq('username', username).ilike('artist', artist).ilike('album', album)
-        loadCollection()
       }
     } catch { /* silent */ }
+
+    try {
+      await fetch('/api/discogs-enrich-one', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username, id }) })
+    } catch { /* silent */ }
+
+    loadCollection()
   }
 
   /* ── Cover management actions ── */
