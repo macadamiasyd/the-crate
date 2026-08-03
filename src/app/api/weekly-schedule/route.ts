@@ -18,7 +18,10 @@ const DAYS = 7
 const TARGET_ALBUMS = ALBUMS_PER_DAY * DAYS
 const DAYS_LOOKBACK = Math.round(MONTHS_LOOKBACK * 30.44)
 
-const USERNAME = 'joel' // sole user; Phase 2 parameterises this
+// Sole user; Phase 2 parameterises this. Matched with ilike, not eq — the stored
+// casing is "Joel" and Supabase's eq is case-sensitive, so an exact match on the
+// wrong casing silently returns zero rows rather than erroring.
+const USERNAME = 'Joel'
 
 interface EligibleRow {
   artist: string
@@ -64,7 +67,7 @@ export async function GET(req: NextRequest) {
     const { data: eligible, error: eligibleError } = await supabaseAdmin
       .from('v_unplayed')
       .select('artist, album, genre, year')
-      .eq('username', USERNAME)
+      .ilike('username', USERNAME)
       .or(`days_since_played.is.null,days_since_played.gte.${DAYS_LOOKBACK}`) as {
         data: EligibleRow[] | null
         error: unknown

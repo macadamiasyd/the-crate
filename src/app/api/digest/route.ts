@@ -14,13 +14,16 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
-  const username = 'joel' // sole user; Phase 2 parameterises this
+  // Sole user; Phase 2 parameterises this. Matched with ilike, not eq — the stored
+  // casing is "Joel" and Supabase's eq is case-sensitive, so an exact match on the
+  // wrong casing silently returns zero rows rather than erroring.
+  const username = 'Joel'
 
   // ── 1. Dust off — 5 longest-unplayed ─────────────────────────────────────
   const { data: dustOff } = await supabaseAdmin
     .from('v_unplayed')
     .select('artist, album, cover_url, last_played, days_since_played')
-    .eq('username', username)
+    .ilike('username', username)
     .not('cover_url', 'is', null)
     .order('days_since_played', { ascending: false, nullsFirst: true })
     .limit(5)
@@ -38,7 +41,7 @@ export async function GET(req: NextRequest) {
   const { data: lastYear } = await supabaseAdmin
     .from('spins')
     .select('artist, album, date_played, cover_url')
-    .eq('username', username)
+    .ilike('username', username)
     .gte('date_played', fmt(weekStart))
     .lte('date_played', fmt(weekEnd))
     .order('date_played')
@@ -49,9 +52,9 @@ export async function GET(req: NextRequest) {
   const thirtyDaysAgo = fmt(new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000))
 
   const [{ count: spinsWeek }, { count: spinsMonth }, { data: recentSpins }] = await Promise.all([
-    supabaseAdmin.from('spins').select('*', { count: 'exact', head: true }).eq('username', username).gte('date_played', thisWeekStart),
-    supabaseAdmin.from('spins').select('*', { count: 'exact', head: true }).eq('username', username).gte('date_played', thisMonthStart),
-    supabaseAdmin.from('spins').select('artist').eq('username', username).gte('date_played', thirtyDaysAgo),
+    supabaseAdmin.from('spins').select('*', { count: 'exact', head: true }).ilike('username', username).gte('date_played', thisWeekStart),
+    supabaseAdmin.from('spins').select('*', { count: 'exact', head: true }).ilike('username', username).gte('date_played', thisMonthStart),
+    supabaseAdmin.from('spins').select('artist').ilike('username', username).gte('date_played', thirtyDaysAgo),
   ])
 
   const artistCounts: Record<string, number> = {}
