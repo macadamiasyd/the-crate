@@ -12,11 +12,14 @@ interface EnrichReport {
   remaining: number
 }
 
-interface ValuesReport {
-  total: number
-  updated: number
-  errors: number
-  remaining: number
+interface ScheduleResult {
+  sent?: boolean
+  skipped?: boolean
+  reason?: string
+  error?: string
+  eligibleCount?: number
+  albumCount?: number
+  dropped?: number
 }
 
 export default function SettingsTab({ username }: { username: string }) {
@@ -26,8 +29,8 @@ export default function SettingsTab({ username }: { username: string }) {
   const [applying, setApplying] = useState(false)
   const [applyResult, setApplyResult] = useState<string | null>(null)
 
-  const [refreshingValues, setRefreshingValues] = useState(false)
-  const [valuesReport, setValuesReport] = useState<ValuesReport | null>(null)
+  const [sendingSchedule, setSendingSchedule] = useState(false)
+  const [scheduleResult, setScheduleResult] = useState<string | null>(null)
 
   const [sendingDigest, setSendingDigest] = useState(false)
   const [digestResult, setDigestResult] = useState<string | null>(null)
@@ -104,29 +107,30 @@ export default function SettingsTab({ username }: { username: string }) {
     setApplying(false)
   }
 
-  async function handleRefreshValues() {
-    setRefreshingValues(true)
+  async function handleSendSchedule() {
+    const secret = prompt('Enter CRON_SECRET:')
+    if (!secret) return
+    setSendingSchedule(true)
+    setScheduleResult(null)
     try {
-      const res = await fetch('/api/discogs-values', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username }),
+      const res = await fetch('/api/weekly-schedule?force=true', {
+        headers: { Authorization: `Bearer ${secret}` },
       })
-      if (!res.ok) throw new Error(`${res.status}`)
-      const data: ValuesReport = await res.json()
-      setValuesReport(prev => prev ? {
-        total: prev.total + data.total,
-        updated: prev.updated + data.updated,
-        errors: prev.errors + data.errors,
-        remaining: data.remaining,
-      } : data)
+      const data: ScheduleResult = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        setScheduleResult(`Error ${res.status}${data.error ? ` — ${data.error}` : ''}`)
+      } else if (data.sent) {
+        setScheduleResult(
+          `✓ Sent — ${data.albumCount} albums chosen from ${data.eligibleCount} unplayed` +
+          (data.dropped ? ` (${data.dropped} dropped as not in collection)` : '')
+        )
+      } else {
+        setScheduleResult(data.reason ?? 'Not sent')
+      }
     } catch {
-      setValuesReport(prev => prev
-        ? { ...prev, errors: prev.errors + 1, remaining: 0 }
-        : { total: 0, updated: 0, errors: 1, remaining: 0 }
-      )
+      setScheduleResult('Request failed')
     }
-    setRefreshingValues(false)
+    setSendingSchedule(false)
   }
 
   async function handleTestDigest() {
@@ -156,7 +160,7 @@ export default function SettingsTab({ username }: { username: string }) {
         <h2 className="text-cream text-xs font-semibold uppercase tracking-widest mb-4">Discogs Enrichment</h2>
         <div className="bg-surface rounded-lg p-4 sm:p-5 space-y-4">
           <p className="text-cream-dim text-sm">
-            Searches Discogs for collection records missing cover art, label, and catalogue number.
+            Searches Discogs for collection records missing cover art, label, catalogue number and styles.
             Matched records get enriched; ambiguous results are listed below for you to review.
           </p>
           <button
@@ -226,28 +230,25 @@ export default function SettingsTab({ username }: { username: string }) {
             </div>
           )}
 
-          <div className="border-t border-border pt-4">
-            <p className="text-cream-dim text-xs mb-3">
-              Refresh pricing data (lowest ask) for records already matched to Discogs. ~300+ API calls — takes several minutes.
-            </p>
-            <button
-              onClick={handleRefreshValues}
-              disabled={refreshingValues}
-              className="px-4 py-2 bg-surface2 text-cream-dim border border-border rounded text-sm hover:border-teal hover:text-teal transition-colors disabled:opacity-50"
-            >
-              {refreshingValues
-                ? 'Refreshing values…'
-                : valuesReport && valuesReport.remaining > 0
-                  ? `Continue refreshing (${valuesReport.remaining} remaining)`
-                  : 'Refresh Values'}
-            </button>
-            {valuesReport && (
-              <div className="mt-2 text-sm text-cream-dim">
-                {valuesReport.updated} updated · {valuesReport.errors} errors (of {valuesReport.total} processed)
-                {valuesReport.remaining > 0 && <span> · {valuesReport.remaining} still queued</span>}
-              </div>
-            )}
-          </div>
+        </div>
+      </section>
+
+      {/* Weekly listening schedule */}
+      <section>
+        <h2 className="text-cream text-xs font-semibold uppercase tracking-widest mb-4">Weekly Schedule</h2>
+        <div className="bg-surface rounded-lg p-4 sm:p-5 space-y-4">
+          <p className="text-cream-dim text-sm">
+            Builds a week of listening — three albums a day, drawn from records you haven&apos;t played
+            in eight months — and emails it. Runs automatically Sunday evening (Sydney).
+          </p>
+          <button
+            onClick={handleSendSchedule}
+            disabled={sendingSchedule}
+            className="px-4 py-2 bg-surface2 text-cream border border-border rounded text-sm hover:border-teal hover:text-teal transition-colors disabled:opacity-50"
+          >
+            {sendingSchedule ? 'Building schedule…' : 'Email me a schedule now'}
+          </button>
+          {scheduleResult && <div className="text-sm text-cream-dim">{scheduleResult}</div>}
         </div>
       </section>
 

@@ -20,4 +20,10 @@ Sole user today; Phase 2 adds auth + multi-tenancy.
 ## Env vars (Vercel)
 ANTHROPIC_API_KEY · NEXT_PUBLIC_SUPABASE_URL · NEXT_PUBLIC_SUPABASE_ANON_KEY
 SUPABASE_SERVICE_ROLE_KEY · DISCOGS_TOKEN · RESEND_API_KEY · DIGEST_TO · CRON_SECRET
+SCHEDULE_EMAIL_TO (optional, falls back to DIGEST_TO) · SCHEDULE_EMAIL_FROM (optional)
 ASK_LEGACY_CSV (optional, set to "true" to revert Ask to CSV dump)
+
+## Removed features
+Discogs price guide (`lowest_price` / `num_for_sale`) was removed 2026-08-03 — Discogs
+low-ask is per-pressing-and-condition, and the collection records neither, so the numbers
+were meaningless. DB columns are left in place but nothing reads or writes them.

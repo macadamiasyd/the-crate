@@ -58,12 +58,6 @@ export default function StatsTab({ username }: { username: string }) {
     .sort((a, b) => b[1] - a[1])
     .slice(0, 10)
 
-  // Discogs value stats
-  const valued = collection.filter(r => r.lowest_price != null && r.lowest_price > 0)
-  const totalValue = valued.reduce((s, r) => s + (r.lowest_price ?? 0), 0)
-  const avgValue = valued.length > 0 ? totalValue / valued.length : 0
-  const topValued = [...valued].sort((a, b) => (b.lowest_price ?? 0) - (a.lowest_price ?? 0)).slice(0, 5)
-
   // Spins per month (last 12 months)
   const now = new Date()
   const monthKeys: string[] = []
@@ -223,35 +217,6 @@ export default function StatsTab({ username }: { username: string }) {
               </div>
             ))}
           </div>
-        </div>
-      )}
-
-      {/* Discogs value */}
-      {valued.length > 0 && (
-        <div>
-          <h2 className="text-cream text-xs font-semibold uppercase tracking-widest mb-4">Collection Value (Discogs Low Ask)</h2>
-          <div className="grid grid-cols-3 gap-2 sm:gap-4 mb-4">
-            {[
-              { value: `$${totalValue.toFixed(0)}`, label: 'Total Low Ask' },
-              { value: `$${avgValue.toFixed(0)}`, label: 'Avg per Record' },
-              { value: valued.length, label: 'Records with Data' },
-            ].map(({ value, label }) => (
-              <div key={label} className="bg-surface rounded-lg p-3 sm:p-4">
-                <div className="text-cream text-xl sm:text-2xl font-bold">{value}</div>
-                <div className="text-cream-dim text-[10px] sm:text-xs uppercase tracking-wider mt-1">{label}</div>
-              </div>
-            ))}
-          </div>
-          <div className="space-y-2">
-            {topValued.map((r, i) => (
-              <div key={r.id} className="flex items-center gap-3 text-sm">
-                <span className="text-cream-dim text-xs w-5 shrink-0">{i + 1}.</span>
-                <span className="text-cream flex-1 truncate">{r.album} <span className="text-cream-dim">— {r.artist}</span></span>
-                <span className="text-cream-dim shrink-0">${r.lowest_price!.toFixed(2)}</span>
-              </div>
-            ))}
-          </div>
-          <p className="text-cream-dim text-xs mt-3 italic">Low ask prices from Discogs. Not an appraisal.</p>
         </div>
       )}
     </div>

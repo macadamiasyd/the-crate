@@ -36,9 +36,6 @@ export async function POST(req: NextRequest) {
       discogs_release_id: match.releaseId,
       label: details.label ?? match.label,
       catno: details.catno ?? match.catno,
-      lowest_price: details.lowestPrice,
-      num_for_sale: details.numForSale,
-      value_updated_at: new Date().toISOString(),
       discogs_synced_at: new Date().toISOString(),
     }
     if (details.styles.length) updates.styles = details.styles

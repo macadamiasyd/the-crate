@@ -66,7 +66,7 @@ export async function POST(req: NextRequest) {
 
 Database schema:
 - spins(id, username, artist, album, genre, year, format, date_played, cover_url, created_at) — each row is one album play
-- collection(id, username, artist, album, genre, year, format, cover_url, label, catno, lowest_price, num_for_sale, discogs_release_id, created_at) — owned records
+- collection(id, username, artist, album, genre, year, format, cover_url, label, catno, discogs_release_id, created_at) — owned records
 - v_unplayed — collection joined to latest spin per record; includes all collection columns plus last_played (date or null), days_since_played (integer or null, null means never played)
 
 Rules:

@@ -55,8 +55,6 @@ interface DiscogsReleaseResponse {
   labels: Array<{ name: string; catno: string }>
   genres: string[]
   styles: string[]
-  lowest_price: number | null
-  community: { have: number; want: number }
   images: Array<{ uri: string; type: string }>
 }
 
@@ -116,11 +114,9 @@ export async function searchRelease(artist: string, album: string): Promise<Disc
 }
 
 /**
- * Fetch full release details including pricing and styles.
+ * Fetch full release details: styles, cover art, label and catalogue number.
  */
 export async function fetchRelease(releaseId: number): Promise<{
-  lowestPrice: number | null
-  numForSale: number
   styles: string[]
   coverUrl: string | null
   label: string | null
@@ -130,8 +126,6 @@ export async function fetchRelease(releaseId: number): Promise<{
   const primaryImage = data.images?.find(i => i.type === 'primary') ?? data.images?.[0]
 
   return {
-    lowestPrice: data.lowest_price ?? null,
-    numForSale: data.community?.have ?? 0,
     styles: data.styles ?? [],
     coverUrl: primaryImage?.uri ?? null,
     label: data.labels?.[0]?.name ?? null,
