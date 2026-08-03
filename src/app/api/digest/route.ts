@@ -27,6 +27,20 @@ export async function GET(req: NextRequest) {
     )
   }
 
+  // ── Only run on Sunday, Sydney time ───────────────────────────────────────
+  // The cron is 23:00 UTC Saturday = Sunday morning in Sydney. Hobby crons fire
+  // roughly daily and don't reliably honour day-of-week, so without this the
+  // digest would mail out every day. ?force=true bypasses it for manual testing.
+  const sydneyDay = new Intl.DateTimeFormat('en-AU', {
+    timeZone: 'Australia/Sydney',
+    weekday: 'long',
+  }).format(new Date())
+
+  const force = req.nextUrl.searchParams.get('force') === 'true'
+  if (sydneyDay !== 'Sunday' && !force) {
+    return NextResponse.json({ skipped: true, reason: `Today is ${sydneyDay} in Sydney` })
+  }
+
   const to = process.env.DIGEST_TO
   if (!to) {
     return NextResponse.json(
