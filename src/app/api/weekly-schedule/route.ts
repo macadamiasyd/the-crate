@@ -23,6 +23,21 @@ const DAYS_LOOKBACK = Math.round(MONTHS_LOOKBACK * 30.44)
 // wrong casing silently returns zero rows rather than erroring.
 const USERNAME = 'Joel'
 
+/**
+ * Pull the JSON object out of a model response.
+ * The prompt asks for bare JSON, but the model may still wrap it in a fenced
+ * block and/or introduce it with a sentence, so don't depend on it complying:
+ * prefer a fenced block wherever it appears, else take first `{` to last `}`.
+ */
+function extractJson(raw: string): string {
+  const fenced = raw.match(/```(?:json)?\s*([\s\S]*?)```/i)
+  const candidate = (fenced ? fenced[1] : raw).trim()
+  const start = candidate.indexOf('{')
+  const end = candidate.lastIndexOf('}')
+  if (start === -1 || end === -1 || end < start) return candidate
+  return candidate.slice(start, end + 1)
+}
+
 interface EligibleRow {
   artist: string
   album: string
@@ -120,7 +135,7 @@ Return ONLY valid JSON, no preamble and no markdown fences, in this exact shape:
 
     const aiRes = await anthropic.messages.create({
       model: 'claude-sonnet-4-6',
-      max_tokens: 4000,
+      max_tokens: 8000,
       system,
       messages: [{
         role: 'user',
@@ -134,8 +149,7 @@ Return ONLY valid JSON, no preamble and no markdown fences, in this exact shape:
       .join('')
       .trim()
 
-    // Strip markdown fences if the model added them anyway
-    const cleaned = rawText.replace(/^```(?:json)?\s*/i, '').replace(/```$/, '').trim()
+    const cleaned = extractJson(rawText)
 
     let schedule: Schedule
     try {
