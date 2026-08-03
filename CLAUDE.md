@@ -5,6 +5,9 @@ Sole user today; Phase 2 adds auth + multi-tenancy.
 
 ## Key constants
 - JOEL_USER_ID = `2a73c466-83e3-4617-be7b-0b7b30468f14`
+- Usernames are stored capitalised: `Joel`, `Ben`, `James`. Supabase `.eq()` is
+  case-sensitive, so a wrong-cased literal returns zero rows **silently** — no error.
+  Always match usernames with `.ilike()`. This has bitten three times (d14db39, 4168093).
 - Model: `claude-sonnet-4-6` everywhere (Ask, photo ID, digest copy)
 
 ## Stack
