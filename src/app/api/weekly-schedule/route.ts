@@ -29,9 +29,20 @@ interface EligibleRow {
 
 export async function GET(req: NextRequest) {
   // ── Auth: reject anything without the shared secret ─────────────────────────
+  // The `reason` distinguishes "env var missing" from "wrong secret" so a failing
+  // call is diagnosable. Neither value leaks the secret.
   const auth = req.headers.get('authorization')
-  if (!process.env.CRON_SECRET || auth !== `Bearer ${process.env.CRON_SECRET}`) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  if (!process.env.CRON_SECRET) {
+    return NextResponse.json(
+      { error: 'Unauthorized', reason: 'CRON_SECRET is not set in this environment' },
+      { status: 401 }
+    )
+  }
+  if (auth !== `Bearer ${process.env.CRON_SECRET}`) {
+    return NextResponse.json(
+      { error: 'Unauthorized', reason: 'Secret did not match CRON_SECRET' },
+      { status: 401 }
+    )
   }
 
   // ── Only run on Sunday, Sydney time ─────────────────────────────────────────
