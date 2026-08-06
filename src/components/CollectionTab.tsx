@@ -299,6 +299,8 @@ type ViewMode = 'list' | 'grid'
 
 export default function CollectionTab({ username }: { username: string }) {
   const [records, setRecords] = useState<Collection[]>([])
+  // Collection ids with no matching spin — marked with a dot in both views.
+  const [unplayedIds, setUnplayedIds] = useState<Set<string>>(new Set())
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
   const [showModal, setShowModal] = useState(false)
@@ -359,6 +361,17 @@ export default function CollectionTab({ username }: { username: string }) {
       .order('year', { nullsFirst: false })
     setRecords(data || [])
     setLoading(false)
+
+    // Which records have never been logged. v_unplayed left-joins collection to
+    // spins with the artist/album normalisation done in SQL, so this matches the
+    // same way the digest and schedule do — rather than re-implementing it here.
+    // Fetched separately (ids only) to leave the records state shape untouched.
+    const { data: unplayed } = await supabase
+      .from('v_unplayed')
+      .select('id')
+      .eq('username', username)
+      .is('last_played', null)
+    setUnplayedIds(new Set((unplayed ?? []).map(r => r.id)))
   }
 
   const filtered = records.filter(r => {
@@ -750,8 +763,17 @@ export default function CollectionTab({ username }: { username: string }) {
   async function handleSpinIt(record: Collection) {
     const today = new Date().toISOString().split('T')[0]
     const { error } = await supabase.from('spins').insert({ username, artist: record.artist, album: record.album, genre: record.genre, year: record.year, format: record.format, cover_url: record.cover_url, cover_source: record.cover_source, mbid: record.mbid, date_played: today })
-    if (!error) showFlash(`Logged: ${record.album}`)
-    else showFlash('Failed to log spin', false)
+    if (!error) {
+      showFlash(`Logged: ${record.album}`)
+      // Clear the never-logged dot straight away rather than leaving it stale
+      // until the next load.
+      setUnplayedIds(prev => {
+        if (!prev.has(record.id)) return prev
+        const next = new Set(prev)
+        next.delete(record.id)
+        return next
+      })
+    } else showFlash('Failed to log spin', false)
   }
 
   async function handleBulkImport() {
@@ -881,6 +903,14 @@ export default function CollectionTab({ username }: { username: string }) {
                 ) : (
                   <div className="w-full h-full flex items-center justify-center text-[32px] text-[rgba(232,220,200,0.2)]">♪</div>
                 )}
+                {/* Never-logged marker */}
+                {unplayedIds.has(record.id) && (
+                  <span
+                    title="Never logged"
+                    aria-label="Never logged"
+                    className="absolute top-1.5 left-1.5 w-2 h-2 rounded-full bg-accent ring-2 ring-black/50 z-10"
+                  />
+                )}
                 {/* Hover overlay with refresh button */}
                 <div className="absolute inset-0 bg-black/0 group-hover:bg-black/30 transition-colors flex items-start justify-end p-1 opacity-0 group-hover:opacity-100">
                   <button
@@ -919,6 +949,13 @@ export default function CollectionTab({ username }: { username: string }) {
               <div className="flex flex-col sm:flex-row sm:items-center justify-between flex-1 min-w-0">
                 <div className="flex-1 min-w-0">
                   <div className="flex items-baseline gap-1.5 sm:gap-2 flex-wrap">
+                    {unplayedIds.has(record.id) && (
+                      <span
+                        title="Never logged"
+                        aria-label="Never logged"
+                        className="w-1.5 h-1.5 rounded-full bg-accent shrink-0 self-center"
+                      />
+                    )}
                     <span className="text-cream text-sm font-medium truncate max-w-[50vw] sm:max-w-none">{record.album}</span>
                     <span className="text-cream-dim text-sm">— {record.artist}</span>
                     {record.year && <span className="text-cream-dim text-xs">({record.year})</span>}
