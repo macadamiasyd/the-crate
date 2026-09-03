@@ -126,8 +126,8 @@ export default function LogTab({ username }: { username: string }) {
     setCollection((data ?? []) as Collection[])
   }
 
-  /** Write one spin row from a record's metadata. Returns true on success. */
-  async function insertSpin(rec: Pick<Collection, 'artist' | 'album' | 'genre' | 'year' | 'format' | 'cover_url' | 'cover_source' | 'mbid'>, date: string) {
+  /** Write one spin row from a record's metadata. Returns an error message, or null on success. */
+  async function insertSpin(rec: Pick<Collection, 'artist' | 'album' | 'genre' | 'year' | 'format' | 'cover_url' | 'cover_source' | 'mbid'>, date: string): Promise<string | null> {
     const { error } = await supabase.from('spins').insert({
       username,
       artist: rec.artist,
@@ -141,19 +141,19 @@ export default function LogTab({ username }: { username: string }) {
       date_played: date,
     })
     if (error) console.error('insertSpin failed:', error)
-    return !error
+    return error?.message ?? null   // null = success
   }
 
   /** Log a play for a record already in the collection. */
   async function logFromCollection(record: Collection) {
     setLoggingId(record.id)
-    const ok = await insertSpin(record, logDate)
-    if (ok) {
+    const err = await insertSpin(record, logDate)
+    if (!err) {
       showFlash(`Logged: ${record.album}`)
       setColQuery('')
       loadSpins()
     } else {
-      showFlash('Failed to log spin', false)
+      showFlash(`Couldn't log: ${err}`, false)
     }
     setLoggingId(null)
   }
@@ -189,13 +189,13 @@ export default function LogTab({ username }: { username: string }) {
     for (const entry of entries) {
       // Reuse the collection's own metadata where we already own the record.
       const existing = matchCollection(entry.artist, entry.album, collection)
-      const ok = existing
+      const err = existing
         ? await insertSpin(existing, entry.date)
         : await insertSpin({
             artist: entry.artist, album: entry.album, genre: null, year: null,
             format: null, cover_url: null, cover_source: null, mbid: null,
           }, entry.date)
-      if (ok) {
+      if (!err) {
         if (!existing) await addToCollection(entry.artist, entry.album, null, null, null, null)
         count++
       }
@@ -280,13 +280,14 @@ export default function LogTab({ username }: { username: string }) {
     const existing = matchCollection(artist, album, collection)
 
     if (existing) {
-      const ok = await insertSpin(existing, logDate)
-      if (ok) {
+      const err = await insertSpin(existing, logDate)
+      if (!err) {
         setSnap(null)
         showFlash(`Logged: ${existing.album}`)
         loadSpins()
       } else {
-        showFlash('Failed to log spin', false)
+        // Leave the card open so the button is a retry rather than a dead end.
+        showFlash(`Couldn't log: ${err}`, false)
       }
     } else {
       const created = await addToCollection(artist, album, snap.genre, snap.year, snap.format, snap.cover_url)
@@ -295,16 +296,20 @@ export default function LogTab({ username }: { username: string }) {
         setSubmitting(false)
         return
       }
-      const ok = await insertSpin(created, logDate)
-      if (ok) {
+      const err = await insertSpin(created, logDate)
+      if (!err) {
         setSnap(null)
         showFlash(`Added to collection and logged: ${album}`)
         loadSpins()
         loadCollectionList()
         autoLookupMeta(artist, album)
       } else {
-        showFlash('Added to collection, but logging failed', false)
-        loadCollectionList()
+        // The record is in the collection now but the play isn't recorded.
+        // Refresh the collection first so pressing the button again takes the
+        // "already owned" branch and simply logs the play — a clean retry
+        // rather than a second copy of the record.
+        showFlash(`Added to collection, but couldn't log the play: ${err}`, false)
+        await loadCollectionList()
       }
     }
     setSubmitting(false)

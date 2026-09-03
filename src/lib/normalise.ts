@@ -12,7 +12,10 @@ const ALIASES: [string, string][] = [
 
 /** Lowercase, strip punctuation and extra whitespace */
 export function normalise(s: string): string {
-  return s
+  // Coerce defensively: this sits on the critical path for logging, scanning,
+  // the digest, the schedule and the never-logged dot, so a stray null from an
+  // API or a DB row should degrade to "no match", never throw and blank a page.
+  return String(s ?? '')
     .toLowerCase()
     .replace(/[^a-z0-9\s]/g, '')
     .replace(/\s+/g, ' ')
@@ -25,7 +28,7 @@ export function normalise(s: string): string {
  * split-release suffixes, & vs and, leading articles.
  */
 function deepNormalise(s: string): string {
-  return s
+  return String(s ?? '')
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')  // ö→o, é→e, ü→u, etc.
     .replace(/\s*\*\s*/g, ' ')             // Kinks* → Kinks
